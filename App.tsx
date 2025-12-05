@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { diseases, syndromes, concepts } from './data';
 import { CardState, Classification, Syndrome, Concept } from './types';
-import { RefreshCw, CheckCircle, AlertCircle, Award, Activity, Dna, Stethoscope, Heart, Timer, Trophy, Play, BookOpen, User, Rocket, Home, BarChart3, Loader2 } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertCircle, Award, Activity, Dna, Stethoscope, Heart, Timer, Trophy, Play, BookOpen, User, Rocket, Home, BarChart3, Loader2, Settings } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "firebase/app";
@@ -32,7 +32,8 @@ interface ScoreEntry {
   date: string;
   difficulty: number;
   mode: string; // 'classification' | 'identification' | 'concepts'
-  isCurrent?: boolean; // Flag para identificar jogo em andamento
+  completed: boolean; // Flag para indicar se venceu ou desistiu
+  isCurrent?: boolean; // Flag visual para ranking em tempo real
 }
 
 // Helper to get color for visual feedback (Game Mode 1)
@@ -83,6 +84,7 @@ const App: React.FC = () => {
   const [gameMode, setGameMode] = useState<GameMode>('concepts'); // Default changed to concepts (1º Seminario) logic order
   const [difficulty, setDifficulty] = useState<number>(2); // 1-4
   const [hasWon, setHasWon] = useState(false);
+  const [rankModeView, setRankModeView] = useState<GameMode>('concepts'); // Separate state for viewing ranking tabs
 
   // --- Countdown & Timer State ---
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -126,12 +128,12 @@ const App: React.FC = () => {
   }>({ status: null });
 
   // --- Load Leaderboard from Firebase ---
-  const fetchLeaderboard = useCallback(async () => {
+  const fetchLeaderboard = useCallback(async (modeToFetch: GameMode) => {
     setIsLoadingScores(true);
     try {
       const q = query(
         collection(db, "leaderboard"),
-        where("mode", "==", gameMode)
+        where("mode", "==", modeToFetch)
       );
       
       const querySnapshot = await getDocs(q);
@@ -140,22 +142,69 @@ const App: React.FC = () => {
         scores.push({ id: doc.id, ...doc.data() } as ScoreEntry);
       });
 
-      // Sort by time (ascending) and take top 10
-      scores.sort((a, b) => a.time - b.time);
-      setLeaderboard(scores); // Store all, filter later
+      // Sort Logic:
+      // 1. Completed games first
+      // 2. Then by time (ascending)
+      scores.sort((a, b) => {
+        // Handle legacy data (missing completed field) as completed=true
+        const aCompleted = a.completed !== false;
+        const bCompleted = b.completed !== false;
+
+        if (aCompleted && !bCompleted) return -1;
+        if (!aCompleted && bCompleted) return 1;
+        return a.time - b.time;
+      });
+
+      setLeaderboard(scores);
 
     } catch (error) {
       console.error("Error fetching leaderboard: ", error);
     } finally {
       setIsLoadingScores(false);
     }
-  }, [gameMode]);
+  }, []);
 
   useEffect(() => {
-    if (currentView === 'ranking' || hasWon) {
-      fetchLeaderboard();
+    if (currentView === 'ranking') {
+      fetchLeaderboard(rankModeView);
+    } else if (hasWon) {
+      fetchLeaderboard(gameMode);
     }
-  }, [fetchLeaderboard, currentView, hasWon]);
+  }, [fetchLeaderboard, currentView, hasWon, rankModeView, gameMode]);
+
+  // --- Save Score Logic ---
+  // isCompleted param: defaults to true (Win), pass false for "Gave up"
+  const saveScore = async (isCompleted: boolean = true) => {
+    // Only block if currently saving. 
+    // We allow saving multiple times if needed (though usually once per game)
+    // but specifically for 'give up', we want to fire and forget mostly.
+    if (isSaving) return;
+    
+    setIsSaving(true);
+    setSaveError(null);
+
+    const scoreData = {
+      name: String(playerName).substring(0, 20),
+      time: Number(elapsedTime),
+      difficulty: Number(difficulty),
+      mode: String(gameMode),
+      date: new Date().toISOString(),
+      completed: isCompleted // Important for sorting
+    };
+
+    try {
+      await addDoc(collection(db, "leaderboard"), scoreData);
+      setScoreSaved(true);
+      if (currentView === 'ranking') {
+        fetchLeaderboard(rankModeView);
+      }
+    } catch (e: any) {
+      console.error("Error adding document: ", e);
+      setSaveError(e.message || "Erro desconhecido ao salvar");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // --- Navigation Handlers ---
   const handleStartGame = () => {
@@ -168,7 +217,7 @@ const App: React.FC = () => {
   };
 
   const handleOpenRanking = () => {
-    // If opening ranking from game, just switch view, don't reset
+    setRankModeView(gameMode); // Default to current selected mode
     setCurrentView('ranking');
   };
 
@@ -181,6 +230,16 @@ const App: React.FC = () => {
     setIsCountingDown(false);
     setHasWon(false);
     setCurrentView('intro');
+  };
+
+  const handleGiveUp = async () => {
+    if (window.confirm("Deseja sair? Seu progresso atual será salvo como 'Desistência' no ranking.")) {
+      // Save partial score if game actually started
+      if (elapsedTime > 0 && !hasWon) {
+        await saveScore(false);
+      }
+      handleBackToMenu();
+    }
   };
 
   // --- Countdown Logic ---
@@ -302,8 +361,6 @@ const App: React.FC = () => {
   // --- Logic for Concepts Mode (1º Seminario) ---
   const activeConceptCards = useMemo(() => {
     const unmastered = conceptCards.filter(c => !c.isMastered);
-    // Similar logic to Syndromes if we want chunking, or just random
-    // Assuming same chunk logic applies as requested "ranking for all 3 modules" implies similar structure
     if (difficulty >= 3) return unmastered;
     
     const chunkSize = difficulty === 1 ? 3 : 6;
@@ -358,13 +415,11 @@ const App: React.FC = () => {
       }
     } else if (gameMode === 'identification') {
       if (activeSyndromeCards.length === 0 && syndromeCards.some(c => c.isMastered)) {
-         // Check if ALL cards are mastered, not just current chunk
          const allMastered = syndromeCards.every(c => c.isMastered);
          if (allMastered) {
              setHasWon(true);
              setIsTimerRunning(false);
          } else {
-             // If current chunk finished but game not over, pick next immediately
              pickNextSyndromeCard();
          }
       } else if (!currentSyndromeId) {
@@ -471,39 +526,19 @@ const App: React.FC = () => {
       }, 1500);
   }
 
-  // --- Save Score Logic ---
-  const saveScore = async () => {
-    if (scoreSaved || isSaving) return;
-    setIsSaving(true);
-    setSaveError(null);
-
-    const scoreData = {
-      name: String(playerName).substring(0, 20),
-      time: Number(elapsedTime),
-      difficulty: Number(difficulty),
-      mode: String(gameMode),
-      date: new Date().toISOString()
-    };
-
-    try {
-      await addDoc(collection(db, "leaderboard"), scoreData);
-      setScoreSaved(true);
-      // Optional: Refresh leaderboard
-      fetchLeaderboard();
-    } catch (e: any) {
-      console.error("Error adding document: ", e);
-      setSaveError(e.message || "Erro desconhecido ao salvar");
-      // Don't set scoreSaved to true so they can try again
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // --- Render Helpers ---
   const getCurrentProgress = () => {
     let cards = gameMode === 'classification' ? classCards : (gameMode === 'concepts' ? conceptCards : syndromeCards);
     const mastered = cards.filter(c => c.isMastered).length;
     return Math.round((mastered / cards.length) * 100);
+  };
+  
+  const getModeLabel = (mode: GameMode) => {
+      switch(mode) {
+          case 'concepts': return '1º Seminário';
+          case 'classification': return '2º Seminário';
+          case 'identification': return 'Síndromes';
+      }
   };
 
   // Randomized buttons logic (Mode 1)
@@ -534,7 +569,8 @@ const App: React.FC = () => {
             <p className="text-slate-300">Treine sua memória com repetição espaçada</p>
           </div>
           
-          <div className="p-8 space-y-6">
+          <div className="p-6 space-y-6">
+            {/* Input Nome */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Como gostaria de ser chamado?
@@ -550,12 +586,65 @@ const App: React.FC = () => {
                   className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-2">
-                * Necessário para o Ranking Global.
-              </p>
             </div>
 
-            <div className="space-y-3">
+            {/* Seleção de Módulo */}
+            <div>
+               <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                 <Settings className="w-4 h-4" /> Selecione o Módulo
+               </label>
+               <div className="grid grid-cols-1 gap-2">
+                 {(['concepts', 'classification', 'identification'] as GameMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setGameMode(mode)}
+                      className={`p-3 rounded-xl border-2 text-left transition-all flex items-center gap-3
+                        ${gameMode === mode 
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800' 
+                          : 'border-slate-100 bg-white text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center
+                          ${gameMode === mode ? 'border-emerald-500' : 'border-slate-300'}`}>
+                          {gameMode === mode && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
+                      </div>
+                      <span className="font-semibold">{getModeLabel(mode)}</span>
+                    </button>
+                 ))}
+               </div>
+            </div>
+
+            {/* Seleção de Dificuldade */}
+            <div>
+               <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                 <BarChart3 className="w-4 h-4" /> Selecione a Dificuldade
+               </label>
+               <div className="flex gap-2">
+                  {[1, 2, 3, 4].map((level) => {
+                      // Hide level 4 for 'identification' or 'concepts'
+                      if (level === 4 && (gameMode === 'identification' || gameMode === 'concepts')) return null;
+                      
+                      return (
+                        <button
+                          key={level}
+                          onClick={() => setDifficulty(level)}
+                          className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all
+                             ${difficulty === level
+                               ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                               : 'border-slate-100 bg-white text-slate-400 hover:border-emerald-100'}`}
+                        >
+                          {level}
+                        </button>
+                      )
+                  })}
+               </div>
+               <p className="text-xs text-slate-400 mt-2">
+                 {gameMode === 'classification' 
+                    ? (difficulty <= 2 ? (difficulty === 1 ? 'Botões fixos e coloridos.' : 'Botões alternam posição.') : 'Modo "Escala de Cinza" para leitura.') 
+                    : (difficulty < 3 ? `Aprenda em grupos de ${difficulty === 1 ? '3' : '6'}.` : 'Todas as perguntas aleatórias.')}
+               </p>
+            </div>
+
+            <div className="space-y-3 pt-2">
               <button 
                 onClick={handleStartGame}
                 disabled={!playerName.trim()}
@@ -595,28 +684,38 @@ const App: React.FC = () => {
 
   // 2. RANKING VIEW
   if (currentView === 'ranking') {
-    // Determine which list to show based on selected tab (reusing gameMode state for tab selection)
-    const currentTabScores = leaderboard.filter(s => s.mode === gameMode);
+    // Determine which list to show based on selected tab (reusing rankModeView state for tab selection)
+    const currentTabScores = leaderboard.filter(s => s.mode === rankModeView);
     
     // Create a combined list with current player status if game is in progress
     let displayList = [...currentTabScores];
     
     // Only inject "In Progress" entry if we are paused in a game (timer running or not won yet) AND view switched
-    if (elapsedTime > 0 && !hasWon && playerName) {
+    // AND the tab matches the current active game mode
+    if (elapsedTime > 0 && !hasWon && playerName && gameMode === rankModeView) {
         const tempEntry: ScoreEntry = {
             name: playerName,
             time: elapsedTime,
             difficulty: difficulty,
             mode: gameMode,
             date: new Date().toISOString(),
+            completed: false,
             isCurrent: true
         };
         displayList.push(tempEntry);
-        displayList.sort((a, b) => a.time - b.time);
+        
+        // Re-sort with the temporary entry
+        displayList.sort((a, b) => {
+            const aCompleted = a.completed !== false;
+            const bCompleted = b.completed !== false;
+            if (aCompleted && !bCompleted) return -1;
+            if (!aCompleted && bCompleted) return 1;
+            return a.time - b.time;
+        });
     }
     
-    // Limit to top 50 for display
-    displayList = displayList.slice(0, 50);
+    // Limit to top 100 for display (to show drops too)
+    displayList = displayList.slice(0, 100);
 
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
@@ -638,20 +737,20 @@ const App: React.FC = () => {
           {/* Tabs */}
           <div className="flex border-b border-slate-200 overflow-x-auto shrink-0">
              <button 
-                onClick={() => setGameMode('concepts')}
-                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${gameMode === 'concepts' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setRankModeView('concepts')}
+                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${rankModeView === 'concepts' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
              >
                 1º Seminário
              </button>
              <button 
-                onClick={() => setGameMode('classification')}
-                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${gameMode === 'classification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setRankModeView('classification')}
+                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${rankModeView === 'classification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
              >
                 2º Seminário
              </button>
              <button 
-                onClick={() => setGameMode('identification')}
-                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${gameMode === 'identification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setRankModeView('identification')}
+                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${rankModeView === 'identification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
              >
                 Síndromes
              </button>
@@ -683,31 +782,47 @@ const App: React.FC = () => {
                  <tbody className="divide-y divide-slate-100">
                    {displayList.map((entry, index) => {
                      const isTop3 = index < 3;
-                     const rankColor = index === 0 ? 'text-amber-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-amber-700' : 'text-slate-600';
+                     const isCompleted = entry.completed !== false; // Handle legacy
+                     const rankColor = isCompleted 
+                        ? (index === 0 ? 'text-amber-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-amber-700' : 'text-slate-600')
+                        : 'text-red-300';
                      
+                     // Row style: Completed vs Gave Up
+                     const rowClass = entry.isCurrent 
+                        ? 'bg-blue-50' 
+                        : (isCompleted ? 'hover:bg-slate-50' : 'bg-red-50 hover:bg-red-100');
+
                      return (
-                       <tr key={index} className={`hover:bg-slate-50 transition-colors ${entry.isCurrent ? 'bg-red-50' : ''}`}>
+                       <tr key={index} className={`transition-colors ${rowClass}`}>
                          <td className="py-3 px-4 text-center">
-                           {isTop3 ? (
+                           {isTop3 && isCompleted ? (
                              <Award className={`w-5 h-5 mx-auto ${rankColor}`} />
                            ) : (
-                             <span className="text-slate-500 text-xs font-medium">{index + 1}º</span>
+                             <span className={`text-xs font-medium ${isCompleted ? 'text-slate-500' : 'text-red-400'}`}>{index + 1}º</span>
                            )}
                          </td>
                          <td className="py-3 px-2">
                            <div className="flex flex-col">
-                             <span className={`font-medium text-sm truncate max-w-[120px] sm:max-w-[200px] ${entry.isCurrent ? 'text-red-600' : 'text-slate-800'}`}>
-                               {entry.name} {entry.isCurrent && "(Não concluiu)"}
-                             </span>
+                             <div className="flex items-center gap-2">
+                                 <span className={`font-medium text-sm truncate max-w-[120px] sm:max-w-[200px] ${isCompleted ? 'text-slate-800' : 'text-red-800'}`}>
+                                 {entry.name}
+                                 </span>
+                                 {!isCompleted && !entry.isCurrent && (
+                                     <span className="text-[10px] uppercase font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded">Desistiu</span>
+                                 )}
+                                 {entry.isCurrent && (
+                                     <span className="text-[10px] uppercase font-bold bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded">Jogando</span>
+                                 )}
+                             </div>
                            </div>
                          </td>
                          <td className="py-3 px-2 text-right">
-                           <span className={`font-mono text-sm ${entry.isCurrent ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
+                           <span className={`font-mono text-sm ${isCompleted ? 'text-slate-600' : 'text-red-600 font-bold'}`}>
                               {formatTime(entry.time)}
                            </span>
                          </td>
                          <td className="hidden sm:table-cell py-3 px-4 text-center">
-                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800">
+                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${isCompleted ? 'bg-slate-100 text-slate-800' : 'bg-red-100 text-red-800'}`}>
                              Lvl {entry.difficulty}
                            </span>
                          </td>
@@ -768,11 +883,7 @@ const App: React.FC = () => {
                  <BarChart3 className="w-5 h-5" />
                </button>
                <button 
-                 onClick={() => {
-                   if (window.confirm("Deseja sair do jogo atual?")) {
-                     handleBackToMenu();
-                   }
-                 }}
+                 onClick={handleGiveUp}
                  className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
                  title="Sair"
                >
@@ -781,78 +892,29 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Linha Inferior: Modos e Dificuldade (Scrollavel se necessario, mas ajustado com wrap) */}
-          <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-between">
-            
-            {/* Seletor de Modo */}
-            <div className="flex bg-slate-100 p-1 rounded-lg overflow-hidden shrink-0">
-               <button
-                  onClick={() => { setGameMode('concepts'); startCountdown(); }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    gameMode === 'concepts' 
-                      ? 'bg-white text-emerald-700 shadow-sm' 
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Rocket className="w-3 h-3" />
-                  <span className="hidden sm:inline">1º Sem.</span>
-                  <span className="sm:hidden">1º</span>
-                </button>
-                <button
-                  onClick={() => { setGameMode('classification'); startCountdown(); }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    gameMode === 'classification' 
-                      ? 'bg-white text-emerald-700 shadow-sm' 
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Activity className="w-3 h-3" />
-                  <span className="hidden sm:inline">2º Sem.</span>
-                  <span className="sm:hidden">2º</span>
-                </button>
-                <button
-                  onClick={() => { setGameMode('identification'); startCountdown(); }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    gameMode === 'identification' 
-                      ? 'bg-white text-emerald-700 shadow-sm' 
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Stethoscope className="w-3 h-3" />
-                  <span className="hidden sm:inline">Síndromes</span>
-                  <span className="sm:hidden">Sind</span>
-                </button>
-            </div>
-
-            {/* Níveis */}
-            <div className="flex items-center gap-1">
-                {[1, 2, 3, 4].map((level) => {
-                    // Hide level 4 for 'identification' or 'concepts' as requested
-                    if (level === 4 && (gameMode === 'identification' || gameMode === 'concepts')) return null;
-
-                    return (
-                      <button
-                        key={level}
-                        onClick={() => { 
-                            setDifficulty(level); 
-                            // Restart game immediately on difficulty change to apply settings
-                            setTimeout(() => startCountdown(), 10);
-                        }}
-                        className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold transition-all border-2
-                          ${difficulty === level 
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
-                            : 'border-slate-200 text-slate-400 hover:border-emerald-200'}`}
-                      >
-                        {level}
-                      </button>
-                    );
-                })}
-            </div>
+          {/* Linha Inferior: Indicador de Modo (Estático) */}
+          <div className="flex justify-center sm:justify-between items-center bg-slate-50 rounded-lg p-2 border border-slate-100">
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-600">
+                  <span className="flex items-center gap-1">
+                      {gameMode === 'concepts' ? <Rocket className="w-3.5 h-3.5 text-emerald-600" /> : 
+                       gameMode === 'classification' ? <Activity className="w-3.5 h-3.5 text-emerald-600" /> : 
+                       <Stethoscope className="w-3.5 h-3.5 text-emerald-600" />}
+                      {getModeLabel(gameMode)}
+                  </span>
+                  <span className="text-slate-300">|</span>
+                  <span className="flex items-center gap-1">
+                      <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+                      Nível {difficulty}
+                  </span>
+              </div>
+              <div className="hidden sm:block text-xs text-slate-400">
+                  Modo bloqueado durante o jogo
+              </div>
           </div>
         </div>
 
         {/* Progress Bar */}
-        <div className="h-1 bg-slate-100 w-full">
+        <div className="h-1 bg-slate-100 w-full mt-2">
            <div 
              className="h-full bg-emerald-500 transition-all duration-500 ease-out"
              style={{ width: `${getCurrentProgress()}%` }}
@@ -893,7 +955,7 @@ const App: React.FC = () => {
              <div className="space-y-3">
                {!scoreSaved ? (
                  <button 
-                   onClick={saveScore}
+                   onClick={() => saveScore(true)}
                    disabled={isSaving}
                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-200 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                  >

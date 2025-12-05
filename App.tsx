@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { diseases } from './data';
 import { CardState, Classification, Disease } from './types';
-import { Brain, RefreshCw, CheckCircle, AlertCircle, Award, Activity } from 'lucide-react';
+import { Brain, RefreshCw, CheckCircle, AlertCircle, Award, Activity, Settings, BarChart3 } from 'lucide-react';
 
 const REQUIRED_STREAK = 3;
 
@@ -16,10 +16,19 @@ const getClassificationColor = (type: Classification) => {
   }
 };
 
+// Helper to shuffle array (Fisher-Yates)
+const shuffleArray = <T,>(array: T[]): T[] => {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
+
 const App: React.FC = () => {
   // --- State ---
   const [cards, setCards] = useState<CardState[]>(() => {
-    // Initialize cards with 0 streak
     return diseases.map(d => ({
       diseaseId: d.id,
       streak: 0,
@@ -28,6 +37,7 @@ const App: React.FC = () => {
   });
 
   const [currentCardId, setCurrentCardId] = useState<string | null>(null);
+  const [difficulty, setDifficulty] = useState<number>(2); // Default to Level 2 (Color + Shuffle)
   const [feedback, setFeedback] = useState<{
     status: 'correct' | 'incorrect' | null;
     message?: string;
@@ -43,16 +53,12 @@ const App: React.FC = () => {
   
   // Select a new card
   const pickNextCard = useCallback(() => {
-    // If no active cards left, user wins
     if (activeCards.length === 0) {
       setHasWon(true);
       setCurrentCardId(null);
       return;
     }
 
-    // Weighted Random Selection:
-    // We want to favor cards that are active. 
-    // To prevent immediate repetition of the same card if possible:
     let pool = activeCards;
     if (activeCards.length > 1 && currentCardId) {
       pool = activeCards.filter(c => c.diseaseId !== currentCardId);
@@ -70,8 +76,41 @@ const App: React.FC = () => {
     }
   }, [pickNextCard, currentCardId, hasWon]);
 
+  // Determine options to display based on difficulty
+  const displayOptions = useMemo(() => {
+    const baseOptions = Object.values(Classification);
+    
+    // Level 1 (Color Fixed) & Level 3 (No-Color Fixed) -> Fixed Order
+    if (difficulty === 1 || difficulty === 3) {
+      return baseOptions;
+    }
+    
+    // Level 2 (Color Shuffle) & Level 4 (No-Color Shuffle) -> Shuffled Order
+    return shuffleArray(baseOptions);
+  }, [currentCardId, difficulty]);
+
+  // Determine button style based on difficulty
+  const getButtonStyle = (classification: Classification) => {
+    // Level 3 & 4 -> No Colors (Grayscale/Neutral)
+    if (difficulty >= 3) {
+      return 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-indigo-300';
+    }
+    // Level 1 & 2 -> Colored
+    return getClassificationColor(classification);
+  };
+
+  const getDifficultyLabel = (level: number) => {
+    switch(level) {
+      case 1: return "Cores + Fixo";
+      case 2: return "Cores + Alternando";
+      case 3: return "Sem Cores + Fixo";
+      case 4: return "Sem Cores + Alternando";
+      default: return "";
+    }
+  };
+
   const handleAnswer = (classification: Classification) => {
-    if (!currentCardId || feedback.status !== null) return; // Prevent double clicks
+    if (!currentCardId || feedback.status !== null) return;
 
     const currentDisease = diseases.find(d => d.id === currentCardId);
     if (!currentDisease) return;
@@ -81,7 +120,6 @@ const App: React.FC = () => {
     if (isCorrect) {
       setFeedback({ status: 'correct', message: 'Correto! Continue assim.' });
       
-      // Update State
       setCards(prev => prev.map(card => {
         if (card.diseaseId === currentCardId) {
           const newStreak = card.streak + 1;
@@ -94,7 +132,6 @@ const App: React.FC = () => {
         return card;
       }));
 
-      // Delay for user to see feedback
       setTimeout(() => pickNextCard(), 1000);
 
     } else {
@@ -104,7 +141,6 @@ const App: React.FC = () => {
         correctAnswer: currentDisease.classification 
       });
 
-      // Update State: Reset streak to 0
       setCards(prev => prev.map(card => {
         if (card.diseaseId === currentCardId) {
           return {
@@ -116,7 +152,6 @@ const App: React.FC = () => {
         return card;
       }));
       
-      // Longer delay for error to read the correct answer
       setTimeout(() => pickNextCard(), 2500);
     }
   };
@@ -128,42 +163,68 @@ const App: React.FC = () => {
       isMastered: false
     })));
     setHasWon(false);
-    setCurrentCardId(null); // Will trigger effect to pick new card
+    setCurrentCardId(null);
   };
 
-  // --- Derived UI Data ---
   const currentDisease = diseases.find(d => d.id === currentCardId);
   const masteredCount = cards.filter(c => c.isMastered).length;
   const totalCount = cards.length;
   const progressPercentage = Math.round((masteredCount / totalCount) * 100);
-
-  // Current streak for the displayed card
   const currentCardState = cards.find(c => c.diseaseId === currentCardId);
   const streakForUI = currentCardState ? currentCardState.streak : 0;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center py-8 px-4">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center py-6 px-4">
       
       {/* Header */}
-      <header className="w-full max-w-2xl mb-8 flex justify-between items-center">
-        <div className="flex items-center gap-2">
+      <header className="w-full max-w-2xl mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="flex items-center gap-2 self-start md:self-auto">
           <div className="bg-indigo-600 p-2 rounded-lg shadow-lg">
             <Activity className="text-white w-6 h-6" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Flashcards Genética</h1>
         </div>
-        <div className="text-right">
-          <p className="text-xs text-slate-500 uppercase font-semibold">Progresso</p>
-          <div className="flex items-center gap-2">
-             <span className="text-xl font-bold text-indigo-600">{masteredCount}</span>
-             <span className="text-slate-400">/</span>
-             <span className="text-xl font-bold text-slate-400">{totalCount}</span>
-          </div>
+        
+        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+            {/* Difficulty Selector */}
+            <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-200 flex">
+                {[1, 2, 3, 4].map((level) => (
+                <button
+                    key={level}
+                    onClick={() => setDifficulty(level)}
+                    className={`w-8 h-8 md:w-10 md:h-10 rounded-lg text-sm font-bold transition-all flex items-center justify-center ${
+                    difficulty === level 
+                        ? 'bg-indigo-600 text-white shadow-md' 
+                        : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                    }`}
+                    title={`Nível ${level}: ${getDifficultyLabel(level)}`}
+                >
+                    {level}
+                </button>
+                ))}
+            </div>
+
+            <div className="text-right">
+                <p className="text-[10px] text-slate-500 uppercase font-semibold">Progresso</p>
+                <div className="flex items-center gap-1">
+                    <span className="text-lg font-bold text-indigo-600">{masteredCount}</span>
+                    <span className="text-slate-400 text-sm">/</span>
+                    <span className="text-lg font-bold text-slate-400">{totalCount}</span>
+                </div>
+            </div>
         </div>
       </header>
+      
+      {/* Difficulty Info Badge */}
+      <div className="w-full max-w-2xl flex justify-center mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-xs font-medium text-slate-500">
+             <BarChart3 className="w-3 h-3" />
+             <span>Dificuldade: <span className="text-indigo-600 font-bold">{getDifficultyLabel(difficulty)}</span></span>
+          </div>
+      </div>
 
       {/* Progress Bar */}
-      <div className="w-full max-w-2xl h-3 bg-slate-200 rounded-full mb-8 overflow-hidden shadow-inner">
+      <div className="w-full max-w-2xl h-2.5 bg-slate-200 rounded-full mb-6 overflow-hidden">
         <div 
           className="h-full bg-indigo-500 transition-all duration-500 ease-out"
           style={{ width: `${progressPercentage}%` }}
@@ -195,12 +256,12 @@ const App: React.FC = () => {
             <div className="flex flex-col gap-6">
               
               {/* The Card */}
-              <div className="bg-white rounded-3xl shadow-xl p-8 md:p-12 border border-slate-100 relative overflow-hidden min-h-[300px] flex flex-col justify-center items-center text-center transition-all">
+              <div className="bg-white rounded-3xl shadow-xl p-8 md:p-12 border border-slate-100 relative overflow-hidden min-h-[280px] flex flex-col justify-center items-center text-center transition-all">
                 
                 {/* Visual Streak Indicator inside card */}
                 <div className="absolute top-4 right-4 flex gap-1">
                    {[...Array(REQUIRED_STREAK)].map((_, i) => (
-                     <div key={i} className={`w-3 h-3 rounded-full transition-colors ${i < streakForUI ? 'bg-green-500' : 'bg-slate-200'}`} />
+                     <div key={i} className={`w-2.5 h-2.5 rounded-full transition-colors ${i < streakForUI ? 'bg-green-500' : 'bg-slate-200'}`} />
                    ))}
                 </div>
 
@@ -208,11 +269,11 @@ const App: React.FC = () => {
                   <Brain className="w-10 h-10 text-indigo-600" />
                 </div>
                 
-                <h2 className="text-2xl md:text-4xl font-extrabold text-slate-800 leading-tight">
+                <h2 className="text-2xl md:text-3xl font-extrabold text-slate-800 leading-tight">
                   {currentDisease.name}
                 </h2>
                 
-                <p className="text-slate-400 mt-4 text-sm font-medium uppercase tracking-wider">
+                <p className="text-slate-400 mt-4 text-xs font-bold uppercase tracking-wider">
                   Qual a classificação?
                 </p>
 
@@ -238,10 +299,10 @@ const App: React.FC = () => {
               </div>
 
               {/* Interaction Area */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.values(Classification).map((classification) => {
-                  const baseStyle = "p-6 rounded-2xl font-bold text-lg transition-all duration-200 shadow-sm border-2 relative overflow-hidden group";
-                  const colorStyle = getClassificationColor(classification);
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {displayOptions.map((classification) => {
+                  const baseStyle = "p-5 rounded-2xl font-bold text-base md:text-lg transition-all duration-200 shadow-sm border-2 relative overflow-hidden group min-h-[80px] flex items-center justify-center text-center";
+                  const colorStyle = getButtonStyle(classification);
                   
                   return (
                     <button
@@ -256,9 +317,9 @@ const App: React.FC = () => {
                 })}
               </div>
               
-              <div className="text-center">
-                 <p className="text-sm text-slate-400">
-                    Responda corretamente {REQUIRED_STREAK} vezes consecutivas para fixar.
+              <div className="text-center mt-2">
+                 <p className="text-xs text-slate-400">
+                    Responda corretamente {REQUIRED_STREAK} vezes seguidas para fixar.
                  </p>
               </div>
             </div>

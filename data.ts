@@ -1,4 +1,4 @@
-import { Disease, Classification } from './types';
+import { Disease, Classification, Syndrome } from './types';
 
 export const diseases: Disease[] = [
   // Image 1: Alossômicas Ligadas ao X Dominantes
@@ -33,4 +33,127 @@ export const diseases: Disease[] = [
   { id: '23', name: 'Polipose Múltipla do Cólon', classification: Classification.AUTO_DOMINANTE },
   { id: '24', name: 'Prognatismo Mandibular', classification: Classification.AUTO_DOMINANTE },
   { id: '25', name: 'Querubismo', classification: Classification.AUTO_DOMINANTE },
+];
+
+export const syndromes: Syndrome[] = [
+  {
+    id: 's1',
+    name: 'Síndrome de Williams-Beuren',
+    features: [
+      'Causa: Microdeleção na região 7q11.23 (perda do gene ELN).',
+      'Cardiovascular: Elastinopatia (estenose aórtica supravalvar).',
+      'Comportamento: Hipersociável, desinibido e alta empatia.',
+      'Fenótipo: Testa larga, nariz curto, lábios espessos ("Face de Duende").'
+    ]
+  },
+  {
+    id: 's2',
+    name: 'Síndrome de Patau',
+    features: [
+      'Causa: Cromossomo 13 extra (Trissomia).',
+      'Gravidade: Mortalidade grave nos primeiros meses.',
+      'Malformações: Polidactilia, fenda labial/palatina, microftalmia.',
+      'SNC: Holoprosencefalia e atraso mental profundo.'
+    ]
+  },
+  {
+    id: 's3',
+    name: 'Síndrome do Supermacho',
+    features: [
+      'Causa: Cariótipo 47,XYY (Cromossomo Y extra).',
+      'Físico: Estatura muito alta, acne severa.',
+      'Cognitivo: Inteligência normal ou limítrofe, possíveis dificuldades de aprendizagem.',
+      'Comportamento: Maioria leva vida normal e independente.'
+    ]
+  },
+  {
+    id: 's4',
+    name: 'Síndrome de Turner',
+    features: [
+      'Causa: Ausência total/parcial de um cromossomo X em mulheres.',
+      'Físico: Baixa estatura, pescoço alado, tórax largo.',
+      'Reprodutivo: Disgenesia gonadal, amenorreia, infertilidade.',
+      'Tratamento: Reposição de GH e estrogênio.'
+    ]
+  },
+  {
+    id: 's5',
+    name: 'Síndrome de Angelman',
+    features: [
+      'Causa: Falha no gene UBE3A materno (Deleção 15q11-q13).',
+      'Comportamento: Risos frequentes sem motivo, personalidade feliz.',
+      'Neurológico: Atraso mental grave, epilepsia, ataxia ("movimentos de marionete").',
+      'Fenótipo: Microcefalia, dentes espaçados.'
+    ]
+  },
+  {
+    id: 's6',
+    name: 'Síndrome de Edwards',
+    features: [
+      'Causa: Trissomia do cromossomo 18.',
+      'Físico: Mãos tensionadas com dedos sobrepostos, pé em mata-borrão (cadeira de balanço).',
+      'Fenótipo: Occipício proeminente, micrognatia.',
+      'Prognóstico: Aneuploidia grave com alta mortalidade precoce.'
+    ]
+  },
+  {
+    id: 's7',
+    name: 'Síndrome de Cri Du Chat',
+    features: [
+      'Causa: Deleção do braço curto do cromossomo 5.',
+      'Marcador Principal: Choro agudo semelhante a miado de gato (laringomalácia).',
+      'Físico: Microcefalia, hipotonia, face de lua cheia.',
+      'Desenvolvimento: Deficiência intelectual moderada a grave.'
+    ]
+  },
+  {
+    id: 's8',
+    name: 'Síndrome de DiGeorge',
+    features: [
+      'Causa: Deleção 22q11.2.',
+      'Tríade: Hipoplasia do Timo (imunodeficiência), Hipoparatireoidismo (hipocalcemia), Cardiopatia.',
+      'Físico: Fenda palatina submucosa, face alongada.',
+      'Outros: Infecções recorrentes devido à falta de células T.'
+    ]
+  },
+  {
+    id: 's9',
+    name: 'Síndrome de Prader-Willi',
+    features: [
+      'Causa: Falta de expressão de genes paternos no cromossomo 15 (Deleção paterna).',
+      'Fase 1: Hipotonia grave ao nascimento (bebê "floppy").',
+      'Fase 2: Hiperfagia compulsiva levando à obesidade mórbida.',
+      'Endócrino: Hipogonadismo, baixa estatura.'
+    ]
+  },
+  {
+    id: 's10',
+    name: 'Síndrome de Down',
+    features: [
+      'Causa: Trissomia do cromossomo 21.',
+      'Físico: Prega simiesca palmar, hipotonia, face achatada, fendas palpebrais oblíquas.',
+      'Saúde: Cardiopatias congênitas (50%), risco de Alzheimer precoce.',
+      'Cognitivo: Deficiência intelectual leve a moderada.'
+    ]
+  },
+  {
+    id: 's11',
+    name: 'Síndrome do Triplo X',
+    features: [
+      'Causa: Mulheres com cromossomo X extra (Superfêmea).',
+      'Clínica: Maioria assintomática.',
+      'Físico: Estatura alta.',
+      'Reprodutivo: Fertilidade geralmente normal.'
+    ]
+  },
+  {
+    id: 's12',
+    name: 'Síndrome de Klinefelter',
+    features: [
+      'Causa: Homens com cromossomo X extra.',
+      'Físico: Estatura alta, ginecomastia, distribuição ginecoide de gordura.',
+      'Reprodutivo: Hipogonadismo (testículos pequenos), infertilidade (azoospermia).',
+      'Tratamento: Reposição de testosterona.'
+    ]
+  }
 ];

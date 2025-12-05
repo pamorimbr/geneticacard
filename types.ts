@@ -17,6 +17,12 @@ export interface CardState {
   isMastered: boolean;
 }
 
+export interface Syndrome {
+  id: string;
+  name: string;
+  features: string[]; // Array de parágrafos/pontos chaves
+}
+
 export interface GameState {
   cards: CardState[];
   currentCardId: string | null;

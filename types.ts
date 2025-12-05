@@ -23,6 +23,12 @@ export interface Syndrome {
   features: string[]; // Array de parágrafos/pontos chaves
 }
 
+export interface Concept {
+  id: string;
+  name: string;
+  description: string[];
+}
+
 export interface GameState {
   cards: CardState[];
   currentCardId: string | null;

@@ -10,6 +10,14 @@
         background-color: #f8fafc;
         font-family: 'Inter', sans-serif;
       }
+      @keyframes pulse-count {
+        0% { transform: scale(0.5); opacity: 0; }
+        50% { transform: scale(1.2); opacity: 1; }
+        100% { transform: scale(1); opacity: 0; }
+      }
+      .animate-count {
+        animation: pulse-count 0.9s ease-in-out infinite;
+      }
     </style>
   <script type="importmap">
 {
@@ -17,7 +25,11 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
     "react": "https://aistudiocdn.com/react@^19.2.1",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/"
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
+    "firebase/analytics": "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/"
   }
 }
 </script>

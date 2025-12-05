@@ -1,4 +1,4 @@
-import { Disease, Classification, Syndrome } from './types';
+import { Disease, Classification, Syndrome, Concept } from './types';
 
 export const diseases: Disease[] = [
   // Image 1: Alossômicas Ligadas ao X Dominantes
@@ -154,6 +154,128 @@ export const syndromes: Syndrome[] = [
       'Físico: Estatura alta, ginecomastia, distribuição ginecoide de gordura.',
       'Reprodutivo: Hipogonadismo (testículos pequenos), infertilidade (azoospermia).',
       'Tratamento: Reposição de testosterona.'
+    ]
+  }
+];
+
+export const concepts: Concept[] = [
+  {
+    id: 'c1',
+    name: 'Genética Forense',
+    description: [
+      'Utiliza conhecimentos de genética e biologia molecular no auxílio à justiça.',
+      'Identifica indivíduos através de regiões altamente variáveis do DNA (impressões digitais do DNA).',
+      'Iniciada na década de 1980 por Jeffreys.',
+      'Métodos: PCR, RFLP, VNTR, STR.'
+    ]
+  },
+  {
+    id: 'c2',
+    name: 'Reação em Cadeia da Polimerase (PCR)',
+    description: [
+      'Permite a replicação in vitro do DNA de forma extremamente rápida.',
+      'Amplifica quantidades mínimas de DNA milhões de vezes em poucas horas.',
+      'Essencial quando a quantidade de amostra biológica é reduzida (ex: cena de crime).',
+      'Detecta marcadores genéticos de doenças e perfis de identificação.'
+    ]
+  },
+  {
+    id: 'c3',
+    name: 'DNA Fingerprint',
+    description: [
+      'Conhecido como "Digital do DNA".',
+      'Utiliza eletroforese para separar fragmentos de DNA por tamanho, densidade e carga.',
+      'O DNA (carga negativa devido ao fosfato) migra para o polo positivo no gel.',
+      'Gera um padrão de bandas único para cada indivíduo (exceto gêmeos univitelinos).'
+    ]
+  },
+  {
+    id: 'c4',
+    name: 'Diagnóstico Genético',
+    description: [
+      'Determinação de mutações gênicas que podem ser transmitidas aos descendentes.',
+      'Etapas: Histórico familiar, exame clínico e exames complementares.',
+      'Inclui diagnóstico pré-natal, teste do pezinho e triagem de portadores (Carrier test).',
+      'Permite aconselhamento genético (prospectivo ou retrospectivo).'
+    ]
+  },
+  {
+    id: 'c5',
+    name: 'Farmacogenética',
+    description: [
+      'Estuda como variações no genoma influenciam a resposta individual a medicamentos.',
+      'Objetivo: Personalizar o tratamento (dose e fármaco) baseando-se na genética.',
+      'Foca em reduzir reações adversas e aumentar a eficácia terapêutica.',
+      'Perfis de metabolização: Normal, Lento (risco de toxicidade), Intermediário, Ultrarrápido (falta de efeito).'
+    ]
+  },
+  {
+    id: 'c6',
+    name: 'Nutrigenética',
+    description: [
+      'Analisa a interação entre o perfil genético individual e os hábitos dietéticos.',
+      'Objetivo: Direcionar escolhas alimentares baseadas em polimorfismos genéticos para prevenir doenças.',
+      'Diferente da Nutrigenômica (que estuda como o alimento altera a expressão dos genes).',
+      'Promove saúde personalizada e prevenção de obesidade/diabetes.'
+    ]
+  },
+  {
+    id: 'c7',
+    name: 'Clonagem Reprodutiva',
+    description: [
+      'Geração de seres exatamente iguais ao doador original.',
+      'Processo: Núcleo de célula somática (2n) é inserido em um óvulo anucleado.',
+      'Diferente da clonagem natural (gêmeos univitelinos).',
+      'Questões éticas complexas e alta taxa de falha em mamíferos.'
+    ]
+  },
+  {
+    id: 'c8',
+    name: 'Clonagem Terapêutica',
+    description: [
+      'Produção de embriões para obtenção de células-tronco embrionárias.',
+      'Objetivo: Medicina regenerativa (criar tecidos/órgãos para transplante).',
+      'Não visa gerar um novo indivíduo completo.',
+      'Tratamento potencial para doenças degenerativas e neuromusculares.'
+    ]
+  },
+  {
+    id: 'c9',
+    name: 'Terapia Gênica',
+    description: [
+      'Introdução de material genético terapêutico para substituir ou silenciar genes defeituosos.',
+      'Vetores: Virais (Adenovírus, Retrovírus) ou Não-virais (Plasmídeos, Lipossomas, CRISPR).',
+      'Pode ser Ex vivo (células tratadas fora do corpo) ou In vivo.',
+      'Aplicações: Doenças hereditárias, câncer (terapia oncolítica) e combate a vírus (HIV).'
+    ]
+  },
+  {
+    id: 'c10',
+    name: 'Transgênicos',
+    description: [
+      'Organismos que receberam DNA exógeno (de outra espécie) em seu genoma.',
+      'Técnicas: Biobalística ou Agrobacterium tumefaciens (em plantas).',
+      'Aplicações: Aumento de produtividade, resistência a pragas, produção de fármacos.',
+      'Riscos: Contaminação genética ambiental e possíveis reações alérgicas.'
+    ]
+  },
+  {
+    id: 'c11',
+    name: 'Projeto Genoma Humano',
+    description: [
+      'Esforço internacional (1990-2003) para sequenciar todo o DNA humano.',
+      'Método principal: Sequenciamento de Sanger (automatizado).',
+      'Resultado: Mapeamento de cerca de 20.000-25.000 genes.',
+      'Base para a medicina genômica atual.'
+    ]
+  },
+  {
+    id: 'c12',
+    name: 'Projetos Proteoma e Microbioma',
+    description: [
+      'Proteoma: Estudo do conjunto total de proteínas expressas (elo entre genoma e função).',
+      'Microbioma: Mapeamento de microrganismos que habitam o corpo humano (ex: gene 16S).',
+      'Objetivo: Compreender interações complexas na saúde e doença além do DNA nuclear.'
     ]
   }
 ];

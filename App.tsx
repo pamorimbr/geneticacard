@@ -82,7 +82,7 @@ const App: React.FC = () => {
   // --- Global State ---
   const [currentView, setCurrentView] = useState<ViewState>('intro');
   const [gameMode, setGameMode] = useState<GameMode>('concepts'); // Default changed to concepts (1º Seminario) logic order
-  const [difficulty, setDifficulty] = useState<number>(2); // 1-4
+  const [difficulty, setDifficulty] = useState<number>(3); // Default max for concepts
   const [hasWon, setHasWon] = useState(false);
   const [rankModeView, setRankModeView] = useState<GameMode>('concepts'); // Separate state for viewing ranking tabs
 
@@ -126,6 +126,15 @@ const App: React.FC = () => {
     message?: string;
     correctAnswer?: string;
   }>({ status: null });
+
+  // --- Auto-Set Max Difficulty based on Mode ---
+  useEffect(() => {
+    if (gameMode === 'classification') {
+      setDifficulty(4); // Max difficulty for Classification
+    } else {
+      setDifficulty(3); // Max difficulty for Syndromes and Concepts (Randomized all)
+    }
+  }, [gameMode]);
 
   // --- Load Leaderboard from Firebase ---
   const fetchLeaderboard = useCallback(async (modeToFetch: GameMode) => {
@@ -299,16 +308,17 @@ const App: React.FC = () => {
   // --- Logic for Classification Mode ---
   const activeClassCards = useMemo(() => classCards.filter(c => !c.isMastered), [classCards]);
   
-  const pickNextClassCard = useCallback(() => {
+  const pickNextClassCard = useCallback((excludeId?: string) => {
     if (activeClassCards.length === 0) return;
     let pool = activeClassCards;
-    if (activeClassCards.length > 1 && currentClassId) {
-      pool = activeClassCards.filter(c => c.diseaseId !== currentClassId);
+    // Ensure we don't pick the one we just answered if there are others available
+    if (activeClassCards.length > 1 && excludeId) {
+      pool = activeClassCards.filter(c => c.diseaseId !== excludeId);
     }
     const randomIndex = Math.floor(Math.random() * pool.length);
     setCurrentClassId(pool[randomIndex].diseaseId);
     setFeedback({ status: null });
-  }, [activeClassCards, currentClassId]);
+  }, [activeClassCards]);
 
   // --- Logic for Identification Mode (Syndromes) ---
   const activeSyndromeCards = useMemo(() => {
@@ -330,11 +340,12 @@ const App: React.FC = () => {
     return unmastered;
   }, [syndromeCards, difficulty]);
 
-  const pickNextSyndromeCard = useCallback(() => {
+  const pickNextSyndromeCard = useCallback((excludeId?: string) => {
     if (activeSyndromeCards.length === 0) return;
     let pool = activeSyndromeCards;
-    if (activeSyndromeCards.length > 1 && currentSyndromeId) {
-      pool = activeSyndromeCards.filter(c => c.diseaseId !== currentSyndromeId);
+    // Ensure we don't pick the one we just answered if there are others available
+    if (activeSyndromeCards.length > 1 && excludeId) {
+      pool = activeSyndromeCards.filter(c => c.diseaseId !== excludeId);
     }
     
     // If pool is empty (shouldn't happen if game not won), fallback
@@ -355,7 +366,7 @@ const App: React.FC = () => {
     setSyndromeOptions(options);
     setFeedback({ status: null });
 
-  }, [activeSyndromeCards, currentSyndromeId]);
+  }, [activeSyndromeCards]);
 
 
   // --- Logic for Concepts Mode (1º Seminario) ---
@@ -376,11 +387,12 @@ const App: React.FC = () => {
     return unmastered;
   }, [conceptCards, difficulty]);
 
-  const pickNextConceptCard = useCallback(() => {
+  const pickNextConceptCard = useCallback((excludeId?: string) => {
     if (activeConceptCards.length === 0) return;
     let pool = activeConceptCards;
-    if (activeConceptCards.length > 1 && currentConceptId) {
-      pool = activeConceptCards.filter(c => c.diseaseId !== currentConceptId);
+    // Ensure we don't pick the one we just answered if there are others available
+    if (activeConceptCards.length > 1 && excludeId) {
+      pool = activeConceptCards.filter(c => c.diseaseId !== excludeId);
     }
 
      if (pool.length === 0) return;
@@ -398,7 +410,7 @@ const App: React.FC = () => {
 
     setConceptOptions(options);
     setFeedback({ status: null });
-  }, [activeConceptCards, currentConceptId]);
+  }, [activeConceptCards]);
 
 
   // --- Game Loop Triggers ---
@@ -453,6 +465,7 @@ const App: React.FC = () => {
     if (!currentCard) return;
 
     const isCorrect = currentCard.classification === answer;
+    const cardIdToExclude = currentClassId; // Capture ID for exclusion next turn
 
     setFeedback({
       status: isCorrect ? 'correct' : 'incorrect',
@@ -462,7 +475,7 @@ const App: React.FC = () => {
 
     setTimeout(() => {
       setClassCards(prev => prev.map(card => {
-        if (card.diseaseId !== currentClassId) return card;
+        if (card.diseaseId !== cardIdToExclude) return card;
         if (isCorrect) {
           const newStreak = card.streak + 1;
           return { ...card, streak: newStreak, isMastered: newStreak >= REQUIRED_STREAK };
@@ -470,7 +483,7 @@ const App: React.FC = () => {
           return { ...card, streak: 0 };
         }
       }));
-      pickNextClassCard();
+      pickNextClassCard(cardIdToExclude);
     }, 1500); // Wait for feedback
   };
 
@@ -479,6 +492,7 @@ const App: React.FC = () => {
     
     const isCorrect = selectedId === currentSyndromeId;
     const correctSyndrome = syndromes.find(s => s.id === currentSyndromeId);
+    const cardIdToExclude = currentSyndromeId;
 
     setFeedback({
       status: isCorrect ? 'correct' : 'incorrect',
@@ -488,7 +502,7 @@ const App: React.FC = () => {
 
     setTimeout(() => {
       setSyndromeCards(prev => prev.map(card => {
-        if (card.diseaseId !== currentSyndromeId) return card;
+        if (card.diseaseId !== cardIdToExclude) return card;
         if (isCorrect) {
           const newStreak = card.streak + 1;
           return { ...card, streak: newStreak, isMastered: newStreak >= REQUIRED_STREAK };
@@ -496,7 +510,7 @@ const App: React.FC = () => {
           return { ...card, streak: 0 };
         }
       }));
-      pickNextSyndromeCard();
+      pickNextSyndromeCard(cardIdToExclude);
     }, 1500);
   };
 
@@ -505,6 +519,7 @@ const App: React.FC = () => {
 
       const isCorrect = selectedId === currentConceptId;
       const correctConcept = concepts.find(c => c.id === currentConceptId);
+      const cardIdToExclude = currentConceptId;
 
       setFeedback({
           status: isCorrect ? 'correct' : 'incorrect',
@@ -514,7 +529,7 @@ const App: React.FC = () => {
 
       setTimeout(() => {
           setConceptCards(prev => prev.map(card => {
-              if (card.diseaseId !== currentConceptId) return card;
+              if (card.diseaseId !== cardIdToExclude) return card;
               if (isCorrect) {
                   const newStreak = card.streak + 1;
                   return { ...card, streak: newStreak, isMastered: newStreak >= REQUIRED_STREAK };
@@ -522,7 +537,7 @@ const App: React.FC = () => {
                   return { ...card, streak: 0 };
               }
           }));
-          pickNextConceptCard();
+          pickNextConceptCard(cardIdToExclude);
       }, 1500);
   }
 
@@ -536,8 +551,8 @@ const App: React.FC = () => {
   const getModeLabel = (mode: GameMode) => {
       switch(mode) {
           case 'concepts': return '1º Seminário';
-          case 'classification': return '2º Seminário';
-          case 'identification': return 'Síndromes';
+          case 'classification': return 'Classificação das Doenças';
+          case 'identification': return '2º Semestre - Síndromes';
       }
   };
 
@@ -594,7 +609,13 @@ const App: React.FC = () => {
                  <Settings className="w-4 h-4" /> Selecione o Módulo
                </label>
                <div className="grid grid-cols-1 gap-2">
-                 {(['concepts', 'classification', 'identification'] as GameMode[]).map((mode) => (
+                 {/* 
+                     ORDER: 
+                     1. concepts (1º Seminário)
+                     2. identification (2º Semestre - Síndromes)
+                     3. classification (Classificação das Doenças)
+                 */}
+                 {(['concepts', 'identification', 'classification'] as GameMode[]).map((mode) => (
                     <button
                       key={mode}
                       onClick={() => setGameMode(mode)}
@@ -613,8 +634,8 @@ const App: React.FC = () => {
                </div>
             </div>
 
-            {/* Seleção de Dificuldade */}
-            <div>
+            {/* Seleção de Dificuldade - HIDDEN AS REQUESTED */}
+            <div className="hidden">
                <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
                  <BarChart3 className="w-4 h-4" /> Selecione a Dificuldade
                </label>
@@ -743,16 +764,16 @@ const App: React.FC = () => {
                 1º Seminário
              </button>
              <button 
-                onClick={() => setRankModeView('classification')}
-                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${rankModeView === 'classification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
-             >
-                2º Seminário
-             </button>
-             <button 
                 onClick={() => setRankModeView('identification')}
                 className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${rankModeView === 'identification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
              >
-                Síndromes
+                2º Semestre - Síndromes
+             </button>
+             <button 
+                onClick={() => setRankModeView('classification')}
+                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${rankModeView === 'classification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                Classificação das Doenças
              </button>
           </div>
 
@@ -792,6 +813,9 @@ const App: React.FC = () => {
                         ? 'bg-blue-50' 
                         : (isCompleted ? 'hover:bg-slate-50' : 'bg-red-50 hover:bg-red-100');
 
+                     // Calculate Max Level based on Mode
+                     const maxLevel = entry.mode === 'classification' ? 4 : 3;
+
                      return (
                        <tr key={index} className={`transition-colors ${rowClass}`}>
                          <td className="py-3 px-4 text-center">
@@ -823,7 +847,7 @@ const App: React.FC = () => {
                          </td>
                          <td className="hidden sm:table-cell py-3 px-4 text-center">
                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${isCompleted ? 'bg-slate-100 text-slate-800' : 'bg-red-100 text-red-800'}`}>
-                             Lvl {entry.difficulty}
+                             {entry.difficulty}/{maxLevel}
                            </span>
                          </td>
                          <td className="hidden md:table-cell py-3 px-4 text-right text-xs text-slate-400">
@@ -935,7 +959,7 @@ const App: React.FC = () => {
              <p className="text-slate-600 mb-6">
                Você dominou o módulo 
                <span className="font-bold text-emerald-600">
-                 {gameMode === 'classification' ? ' 2º Seminário' : (gameMode === 'concepts' ? ' 1º Seminário' : ' Síndromes')}
+                 {gameMode === 'classification' ? ' Classificação das Doenças' : (gameMode === 'concepts' ? ' 1º Seminário' : ' 2º Semestre - Síndromes')}
                </span>!
              </p>
              

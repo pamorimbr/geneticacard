@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { diseases, syndromes, concepts } from './data';
 import { CardState, Classification, Syndrome, Concept } from './types';
-import { RefreshCw, CheckCircle, AlertCircle, Award, Activity, Dna, Stethoscope, Heart, Timer, Trophy, Play, BookOpen, User, Rocket, Home, BarChart3 } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertCircle, Award, Activity, Dna, Stethoscope, Heart, Timer, Trophy, Play, BookOpen, User, Rocket, Home, BarChart3, Loader2 } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "firebase/app";
@@ -94,6 +94,7 @@ const App: React.FC = () => {
   const [playerName, setPlayerName] = useState('');
   const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([]);
   const [isLoadingScores, setIsLoadingScores] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // New state for feedback
   const [scoreSaved, setScoreSaved] = useState(false);
 
   // --- Mode 1 State (Classification) ---
@@ -188,6 +189,7 @@ const App: React.FC = () => {
     setCountdownValue(3);
     setHasWon(false);
     setScoreSaved(false);
+    setIsSaving(false);
     setElapsedTime(0);
     setFeedback({ status: null });
 
@@ -332,8 +334,9 @@ const App: React.FC = () => {
 
   // --- Save Score Handler (Firebase) ---
   const handleSaveScore = async () => {
-    if (!playerName.trim() || scoreSaved) return;
+    if (!playerName.trim() || scoreSaved || isSaving) return;
 
+    setIsSaving(true);
     try {
       await addDoc(collection(db, "leaderboard"), {
         name: playerName.trim(),
@@ -347,7 +350,9 @@ const App: React.FC = () => {
       setScoreSaved(true);
     } catch (e) {
       console.error("Error adding document: ", e);
-      alert("Erro ao salvar pontuação. Tente novamente.");
+      alert("Erro ao salvar pontuação no banco de dados. Verifique sua conexão e tente novamente.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -621,32 +626,32 @@ const App: React.FC = () => {
     displayLeaderboard.sort((a, b) => a.time - b.time);
 
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center py-10 px-4 font-sans">
-        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl border border-indigo-100 p-8">
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center py-6 md:py-10 px-4 font-sans">
+        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl border border-indigo-100 p-4 md:p-8">
           <div className="flex items-center gap-3 mb-6 border-b pb-4">
              <div className="bg-amber-100 p-3 rounded-full">
-                <Trophy className="w-8 h-8 text-amber-600" />
+                <Trophy className="w-6 h-6 md:w-8 md:h-8 text-amber-600" />
              </div>
-             <h1 className="text-2xl font-bold text-slate-800">Ranking Global</h1>
+             <h1 className="text-xl md:text-2xl font-bold text-slate-800">Ranking Global</h1>
           </div>
 
           {/* Mode Selector Tabs for Ranking */}
-          <div className="flex flex-wrap justify-center gap-2 mb-6 pb-2">
+          <div className="flex overflow-x-auto pb-2 mb-4 gap-2 no-scrollbar md:flex-wrap md:justify-center">
             <button
               onClick={() => setGameMode('concepts')}
-              className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'concepts' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'concepts' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               1º Seminário
             </button>
             <button
               onClick={() => setGameMode('classification')}
-              className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'classification' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'classification' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               2º Seminário
             </button>
             <button
               onClick={() => setGameMode('identification')}
-              className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'identification' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'identification' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               Síndromes
             </button>
@@ -656,29 +661,31 @@ const App: React.FC = () => {
           {isLoadingScores && !isPlaying ? (
              <div className="text-center py-12 text-slate-400">Carregando scores...</div>
            ) : (
-             <div className="overflow-hidden rounded-xl border border-slate-200 mb-8">
-               <table className="w-full text-sm text-left">
-                 <thead className="bg-slate-100 text-slate-600 font-semibold">
+             <div className="rounded-xl border border-slate-200 mb-8 w-full overflow-x-auto">
+               <table className="w-full text-xs md:text-sm text-left">
+                 <thead className="bg-slate-100 text-slate-600 font-semibold whitespace-nowrap">
                    <tr>
-                     <th className="px-4 py-3">#</th>
-                     <th className="px-4 py-3">Nome</th>
-                     <th className="px-4 py-3 text-right">Tempo</th>
-                     <th className="px-4 py-3 text-center">Nível</th>
+                     <th className="px-3 py-3 w-10 text-center">#</th>
+                     <th className="px-3 py-3">Nome</th>
+                     <th className="px-3 py-3 text-right">Tempo</th>
+                     <th className="px-3 py-3 text-center hidden sm:table-cell">Nível</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100">
-                   {displayLeaderboard.length > 0 ? displayLeaderboard.slice(0, 20).map((score, index) => (
+                   {displayLeaderboard.length > 0 ? displayLeaderboard.slice(0, 50).map((score, index) => (
                      <tr key={score.id || index} className={`hover:bg-slate-50 ${score.isCurrent ? 'bg-red-50 hover:bg-red-100' : ''}`}>
-                       <td className="px-4 py-3 font-medium text-slate-500">{index + 1}</td>
-                       <td className="px-4 py-3 font-bold text-slate-800 flex items-center gap-2">
-                         {score.name} 
-                         {score.isCurrent && <span className="text-[10px] uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">Não Concluiu</span>}
+                       <td className="px-3 py-2 md:py-3 font-medium text-slate-500 text-center">{index + 1}</td>
+                       <td className="px-3 py-2 md:py-3 font-bold text-slate-800">
+                         <div className="flex flex-col sm:flex-row sm:items-center gap-1">
+                           <span className="truncate max-w-[120px] sm:max-w-xs block">{score.name}</span>
+                           {score.isCurrent && <span className="inline-block text-[10px] uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200 w-fit">Não Concluiu</span>}
+                         </div>
                        </td>
-                       <td className={`px-4 py-3 text-right font-mono ${score.isCurrent ? 'text-red-600 font-bold' : 'text-indigo-600'}`}>
+                       <td className={`px-3 py-2 md:py-3 text-right font-mono whitespace-nowrap ${score.isCurrent ? 'text-red-600 font-bold' : 'text-indigo-600'}`}>
                          {formatTime(score.time)}
                        </td>
-                       <td className="px-4 py-3 text-center">
-                         <span className="bg-slate-200 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">{score.difficulty}</span>
+                       <td className="px-3 py-2 md:py-3 text-center hidden sm:table-cell">
+                         <span className="bg-slate-200 text-slate-600 text-[10px] md:text-xs px-2 py-1 rounded-full font-bold">{score.difficulty}</span>
                        </td>
                      </tr>
                    )) : (
@@ -850,9 +857,18 @@ const App: React.FC = () => {
               <div className="max-w-xs mx-auto mb-8">
                 <button 
                   onClick={handleSaveScore}
-                  className="w-full bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2"
+                  disabled={isSaving}
+                  className="w-full bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  <Award className="w-5 h-5" /> Registrar no Ranking
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" /> Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Award className="w-5 h-5" /> Registrar no Ranking
+                    </>
+                  )}
                 </button>
                 <p className="text-xs text-slate-400 mt-2">Seu nome já foi preenchido.</p>
               </div>

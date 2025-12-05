@@ -96,6 +96,7 @@ const App: React.FC = () => {
   const [isLoadingScores, setIsLoadingScores] = useState(false);
   const [isSaving, setIsSaving] = useState(false); // New state for feedback
   const [scoreSaved, setScoreSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // --- Mode 1 State (Classification) ---
   const [classCards, setClassCards] = useState<CardState[]>(() => 
@@ -189,6 +190,7 @@ const App: React.FC = () => {
     setCountdownValue(3);
     setHasWon(false);
     setScoreSaved(false);
+    setSaveError(null);
     setIsSaving(false);
     setElapsedTime(0);
     setFeedback({ status: null });
@@ -249,823 +251,827 @@ const App: React.FC = () => {
     setFeedback({ status: null });
   }, [activeClassCards, currentClassId]);
 
-  // --- Logic for Identification Mode ---
+  // --- Logic for Identification Mode (Syndromes) ---
   const activeSyndromeCards = useMemo(() => {
     const unmastered = syndromeCards.filter(c => !c.isMastered);
+    // Level 3: All random
     if (difficulty >= 3) return unmastered;
+    
+    // Level 1 or 2: Chunk logic
     const chunkSize = difficulty === 1 ? 3 : 6;
     for (let i = 0; i < syndromes.length; i += chunkSize) {
       const chunkSlice = syndromes.slice(i, i + chunkSize);
       const chunkIds = chunkSlice.map(s => s.id);
+      
       const chunkHasUnmastered = unmastered.some(c => chunkIds.includes(c.diseaseId));
       if (chunkHasUnmastered) {
         return unmastered.filter(c => chunkIds.includes(c.diseaseId));
       }
     }
-    return [];
+    return unmastered;
   }, [syndromeCards, difficulty]);
 
   const pickNextSyndromeCard = useCallback(() => {
     if (activeSyndromeCards.length === 0) return;
-    
     let pool = activeSyndromeCards;
     if (activeSyndromeCards.length > 1 && currentSyndromeId) {
       pool = activeSyndromeCards.filter(c => c.diseaseId !== currentSyndromeId);
     }
-    const nextCard = pool[Math.floor(Math.random() * pool.length)];
-    const correctSyndrome = syndromes.find(s => s.id === nextCard.diseaseId);
     
-    if (correctSyndrome) {
-      const otherSyndromes = syndromes.filter(s => s.id !== correctSyndrome.id);
-      const distractors = shuffleArray(otherSyndromes).slice(0, 3);
-      const options = shuffleArray([correctSyndrome, ...distractors]);
-      
-      setSyndromeOptions(options);
-      setCurrentSyndromeId(nextCard.diseaseId);
-      setFeedback({ status: null });
-    }
+    // If pool is empty (shouldn't happen if game not won), fallback
+    if (pool.length === 0) return;
+
+    const randomIndex = Math.floor(Math.random() * pool.length);
+    const nextId = pool[randomIndex].diseaseId;
+    setCurrentSyndromeId(nextId);
+    
+    // Generate Options
+    const correct = syndromes.find(s => s.id === nextId);
+    if (!correct) return;
+
+    const otherSyndromes = syndromes.filter(s => s.id !== nextId);
+    const shuffledOthers = shuffleArray(otherSyndromes).slice(0, 3);
+    const options = shuffleArray([correct, ...shuffledOthers]);
+    
+    setSyndromeOptions(options);
+    setFeedback({ status: null });
+
   }, [activeSyndromeCards, currentSyndromeId]);
 
-  // --- Logic for Concepts Mode ---
+
+  // --- Logic for Concepts Mode (1º Seminario) ---
   const activeConceptCards = useMemo(() => {
     const unmastered = conceptCards.filter(c => !c.isMastered);
+    // Similar logic to Syndromes if we want chunking, or just random
+    // Assuming same chunk logic applies as requested "ranking for all 3 modules" implies similar structure
     if (difficulty >= 3) return unmastered;
+    
     const chunkSize = difficulty === 1 ? 3 : 6;
     for (let i = 0; i < concepts.length; i += chunkSize) {
       const chunkSlice = concepts.slice(i, i + chunkSize);
       const chunkIds = chunkSlice.map(c => c.id);
+      
       const chunkHasUnmastered = unmastered.some(c => chunkIds.includes(c.diseaseId));
       if (chunkHasUnmastered) {
         return unmastered.filter(c => chunkIds.includes(c.diseaseId));
       }
     }
-    return [];
+    return unmastered;
   }, [conceptCards, difficulty]);
 
   const pickNextConceptCard = useCallback(() => {
     if (activeConceptCards.length === 0) return;
-
     let pool = activeConceptCards;
     if (activeConceptCards.length > 1 && currentConceptId) {
       pool = activeConceptCards.filter(c => c.diseaseId !== currentConceptId);
     }
-    const nextCard = pool[Math.floor(Math.random() * pool.length)];
-    const correctConcept = concepts.find(c => c.id === nextCard.diseaseId);
 
-    if (correctConcept) {
-      const otherConcepts = concepts.filter(c => c.id !== correctConcept.id);
-      const distractors = shuffleArray(otherConcepts).slice(0, 3);
-      const options = shuffleArray([correctConcept, ...distractors]);
+     if (pool.length === 0) return;
 
-      setConceptOptions(options);
-      setCurrentConceptId(nextCard.diseaseId);
-      setFeedback({ status: null });
-    }
+    const randomIndex = Math.floor(Math.random() * pool.length);
+    const nextId = pool[randomIndex].diseaseId;
+    setCurrentConceptId(nextId);
+
+    const correct = concepts.find(c => c.id === nextId);
+    if (!correct) return;
+
+    const otherConcepts = concepts.filter(c => c.id !== nextId);
+    const shuffledOthers = shuffleArray(otherConcepts).slice(0, 3);
+    const options = shuffleArray([correct, ...shuffledOthers]);
+
+    setConceptOptions(options);
+    setFeedback({ status: null });
   }, [activeConceptCards, currentConceptId]);
 
 
-  // --- Mode Switching Triggers ---
+  // --- Game Loop Triggers ---
   useEffect(() => {
-    if (gameMode !== 'classification' && difficulty > 3) {
-      setDifficulty(3);
+    if (currentView !== 'game') return;
+    if (isCountingDown) return;
+
+    if (gameMode === 'classification') {
+      if (activeClassCards.length === 0 && classCards.length > 0) {
+        setHasWon(true);
+        setIsTimerRunning(false);
+      } else if (!currentClassId) {
+        pickNextClassCard();
+      }
+    } else if (gameMode === 'identification') {
+      if (activeSyndromeCards.length === 0 && syndromeCards.some(c => c.isMastered)) {
+         // Check if ALL cards are mastered, not just current chunk
+         const allMastered = syndromeCards.every(c => c.isMastered);
+         if (allMastered) {
+             setHasWon(true);
+             setIsTimerRunning(false);
+         } else {
+             // If current chunk finished but game not over, pick next immediately
+             pickNextSyndromeCard();
+         }
+      } else if (!currentSyndromeId) {
+        pickNextSyndromeCard();
+      }
+    } else if (gameMode === 'concepts') {
+        if (activeConceptCards.length === 0 && conceptCards.some(c => c.isMastered)) {
+            const allMastered = conceptCards.every(c => c.isMastered);
+            if (allMastered) {
+                setHasWon(true);
+                setIsTimerRunning(false);
+            } else {
+                pickNextConceptCard();
+            }
+        } else if (!currentConceptId) {
+            pickNextConceptCard();
+        }
     }
-  }, [gameMode, difficulty]);
+  }, [
+    currentView, isCountingDown, gameMode, 
+    activeClassCards, classCards, currentClassId, pickNextClassCard,
+    activeSyndromeCards, syndromeCards, currentSyndromeId, pickNextSyndromeCard,
+    activeConceptCards, conceptCards, currentConceptId, pickNextConceptCard
+  ]);
 
+  // --- Interaction Handlers ---
+  const handleClassificationAnswer = (answer: Classification) => {
+    if (!currentClassId || feedback.status) return;
 
-  // --- Save Score Handler (Firebase) ---
-  const handleSaveScore = async () => {
-    if (!playerName.trim() || scoreSaved || isSaving) return;
+    const currentCard = diseases.find(d => d.id === currentClassId);
+    if (!currentCard) return;
 
-    setIsSaving(true);
-    try {
-      await addDoc(collection(db, "leaderboard"), {
-        name: playerName.trim(),
-        time: elapsedTime,
-        date: new Date().toLocaleDateString('pt-BR'),
-        difficulty: difficulty,
-        mode: gameMode
+    const isCorrect = currentCard.classification === answer;
+
+    setFeedback({
+      status: isCorrect ? 'correct' : 'incorrect',
+      message: isCorrect ? 'Correto!' : 'Incorreto!',
+      correctAnswer: isCorrect ? undefined : currentCard.classification
+    });
+
+    setTimeout(() => {
+      setClassCards(prev => prev.map(card => {
+        if (card.diseaseId !== currentClassId) return card;
+        if (isCorrect) {
+          const newStreak = card.streak + 1;
+          return { ...card, streak: newStreak, isMastered: newStreak >= REQUIRED_STREAK };
+        } else {
+          return { ...card, streak: 0 };
+        }
+      }));
+      pickNextClassCard();
+    }, 1500); // Wait for feedback
+  };
+
+  const handleSyndromeAnswer = (selectedId: string) => {
+    if (!currentSyndromeId || feedback.status) return;
+    
+    const isCorrect = selectedId === currentSyndromeId;
+    const correctSyndrome = syndromes.find(s => s.id === currentSyndromeId);
+
+    setFeedback({
+      status: isCorrect ? 'correct' : 'incorrect',
+      message: isCorrect ? 'Correto!' : 'Incorreto!',
+      correctAnswer: isCorrect ? undefined : correctSyndrome?.name
+    });
+
+    setTimeout(() => {
+      setSyndromeCards(prev => prev.map(card => {
+        if (card.diseaseId !== currentSyndromeId) return card;
+        if (isCorrect) {
+          const newStreak = card.streak + 1;
+          return { ...card, streak: newStreak, isMastered: newStreak >= REQUIRED_STREAK };
+        } else {
+          return { ...card, streak: 0 };
+        }
+      }));
+      pickNextSyndromeCard();
+    }, 1500);
+  };
+
+  const handleConceptAnswer = (selectedId: string) => {
+      if (!currentConceptId || feedback.status) return;
+
+      const isCorrect = selectedId === currentConceptId;
+      const correctConcept = concepts.find(c => c.id === currentConceptId);
+
+      setFeedback({
+          status: isCorrect ? 'correct' : 'incorrect',
+          message: isCorrect ? 'Correto!' : 'Incorreto!',
+          correctAnswer: isCorrect ? undefined : correctConcept?.name
       });
-      
-      await fetchLeaderboard(); 
+
+      setTimeout(() => {
+          setConceptCards(prev => prev.map(card => {
+              if (card.diseaseId !== currentConceptId) return card;
+              if (isCorrect) {
+                  const newStreak = card.streak + 1;
+                  return { ...card, streak: newStreak, isMastered: newStreak >= REQUIRED_STREAK };
+              } else {
+                  return { ...card, streak: 0 };
+              }
+          }));
+          pickNextConceptCard();
+      }, 1500);
+  }
+
+  // --- Save Score Logic ---
+  const saveScore = async () => {
+    if (scoreSaved || isSaving) return;
+    setIsSaving(true);
+    setSaveError(null);
+
+    const scoreData = {
+      name: String(playerName).substring(0, 20),
+      time: Number(elapsedTime),
+      difficulty: Number(difficulty),
+      mode: String(gameMode),
+      date: new Date().toISOString()
+    };
+
+    try {
+      await addDoc(collection(db, "leaderboard"), scoreData);
       setScoreSaved(true);
-    } catch (e) {
+      // Optional: Refresh leaderboard
+      fetchLeaderboard();
+    } catch (e: any) {
       console.error("Error adding document: ", e);
-      alert("Erro ao salvar pontuação no banco de dados. Verifique sua conexão e tente novamente.");
+      setSaveError(e.message || "Erro desconhecido ao salvar");
+      // Don't set scoreSaved to true so they can try again
     } finally {
       setIsSaving(false);
     }
   };
 
-  // --- Trigger First Card Pick (Only when playing) ---
-  useEffect(() => {
-    if (!isTimerRunning || hasWon || isCountingDown || currentView !== 'game') return;
-
-    if (gameMode === 'classification') {
-      if (activeClassCards.length === 0) {
-        setHasWon(true);
-        setIsTimerRunning(false);
-        setCurrentClassId(null);
-      } else if (!currentClassId) {
-        pickNextClassCard();
-      }
-    } else if (gameMode === 'identification') {
-      if (activeSyndromeCards.length === 0) {
-        const allMastered = syndromeCards.every(c => c.isMastered);
-        if (allMastered) {
-          setHasWon(true);
-          setIsTimerRunning(false);
-          setCurrentSyndromeId(null);
-        } else {
-           if (!currentSyndromeId) pickNextSyndromeCard();
-        }
-      } else if (!currentSyndromeId) {
-        pickNextSyndromeCard();
-      }
-    } else if (gameMode === 'concepts') {
-      if (activeConceptCards.length === 0) {
-        const allMastered = conceptCards.every(c => c.isMastered);
-        if (allMastered) {
-          setHasWon(true);
-          setIsTimerRunning(false);
-          setCurrentConceptId(null);
-        } else {
-          if (!currentConceptId) pickNextConceptCard();
-        }
-      } else if (!currentConceptId) {
-        pickNextConceptCard();
-      }
-    }
-  }, [
-    isTimerRunning,
-    isCountingDown,
-    currentView,
-    gameMode, 
-    hasWon, 
-    activeClassCards.length, 
-    activeSyndromeCards,
-    activeConceptCards,
-    currentClassId, 
-    currentSyndromeId, 
-    currentConceptId,
-    pickNextClassCard, 
-    pickNextSyndromeCard,
-    pickNextConceptCard,
-    syndromeCards,
-    conceptCards
-  ]);
-
-  // --- Helpers ---
-  const isGrayscale = gameMode === 'classification' && difficulty >= 3;
-  const availableLevels = gameMode === 'classification' ? [1, 2, 3, 4] : [1, 2, 3];
-
-  const handleClassAnswer = (classification: Classification) => {
-    if (!currentClassId || feedback.status !== null || isCountingDown) return;
-    const currentDisease = diseases.find(d => d.id === currentClassId);
-    if (!currentDisease) return;
-
-    const isCorrect = currentDisease.classification === classification;
-    processAnswer(isCorrect, currentDisease.classification, setClassCards, pickNextClassCard, currentClassId);
+  // --- Render Helpers ---
+  const getCurrentProgress = () => {
+    let cards = gameMode === 'classification' ? classCards : (gameMode === 'concepts' ? conceptCards : syndromeCards);
+    const mastered = cards.filter(c => c.isMastered).length;
+    return Math.round((mastered / cards.length) * 100);
   };
 
-  const handleSyndromeAnswer = (selectedSyndromeName: string) => {
-    if (!currentSyndromeId || feedback.status !== null || isCountingDown) return;
-    const currentSyndrome = syndromes.find(s => s.id === currentSyndromeId);
-    if (!currentSyndrome) return;
-
-    const isCorrect = currentSyndrome.name === selectedSyndromeName;
-    processAnswer(isCorrect, currentSyndrome.name, setSyndromeCards, pickNextSyndromeCard, currentSyndromeId);
-  };
-
-  const handleConceptAnswer = (selectedConceptName: string) => {
-    if (!currentConceptId || feedback.status !== null || isCountingDown) return;
-    const currentConcept = concepts.find(c => c.id === currentConceptId);
-    if (!currentConcept) return;
-
-    const isCorrect = currentConcept.name === selectedConceptName;
-    processAnswer(isCorrect, currentConcept.name, setConceptCards, pickNextConceptCard, currentConceptId);
-  };
-
-  const processAnswer = (
-    isCorrect: boolean, 
-    correctAnswerText: string, 
-    setCardsFn: React.Dispatch<React.SetStateAction<CardState[]>>,
-    nextCardFn: () => void,
-    currentId: string
-  ) => {
-    if (isCorrect) {
-      setFeedback({ status: 'correct', message: 'Correto!' });
-      setCardsFn(prev => prev.map(card => {
-        if (card.diseaseId === currentId) {
-          const newStreak = card.streak + 1;
-          return { ...card, streak: newStreak, isMastered: newStreak >= REQUIRED_STREAK };
-        }
-        return card;
-      }));
-      setTimeout(() => nextCardFn(), 1000);
-    } else {
-      setFeedback({ 
-        status: 'incorrect', 
-        message: 'Incorreto.',
-        correctAnswer: correctAnswerText 
-      });
-      setElapsedTime(prev => prev + 5); // Time penalty
-      
-      setCardsFn(prev => prev.map(card => {
-        if (card.diseaseId === currentId) {
-          return { ...card, streak: 0 };
-        }
-        return card;
-      }));
-      setTimeout(() => nextCardFn(), 2500);
-    }
-  };
-
-  // --- Render Functions ---
-  const currentCardClass = currentClassId ? diseases.find(d => d.id === currentClassId) : null;
-  const currentCardSyndrome = currentSyndromeId ? syndromes.find(s => s.id === currentSyndromeId) : null;
-  const currentCardConcept = currentConceptId ? concepts.find(c => c.id === currentConceptId) : null;
-
-  // Buttons Logic for Classification
-  const classButtons = useMemo(() => {
-    const buttons = Object.values(Classification).map(c => ({
-      label: c,
-      value: c,
-    }));
+  // Randomized buttons logic (Mode 1)
+  const classificationOptions = useMemo(() => {
+    const options = [
+      Classification.X_DOMINANTE,
+      Classification.X_RECESSIVA,
+      Classification.AUTO_DOMINANTE,
+      Classification.AUTO_RECESSIVA
+    ];
+    // If difficulty is 2 or 4, shuffle every time currentClassId changes
     if (difficulty === 2 || difficulty === 4) {
-      return shuffleArray(buttons);
+      return shuffleArray(options);
     }
-    return buttons;
-  }, [difficulty, currentClassId]);
+    return options;
+  }, [difficulty, currentClassId]); // re-shuffle when card changes
 
-  // --- INTRO SCREEN RENDER ---
+  // --- Views ---
+
+  // 1. INTRO VIEW
   if (currentView === 'intro') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-slate-100 flex items-center justify-center p-4 font-sans">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 border border-white/50 backdrop-blur-sm">
-          <div className="flex justify-center mb-6">
-            <div className="bg-indigo-600 p-4 rounded-2xl shadow-lg shadow-indigo-300 transform -rotate-6">
-              <Dna className="w-10 h-10 text-white" />
-            </div>
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="bg-slate-800 p-8 text-center">
+            <Dna className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
+            <h1 className="text-3xl font-bold text-white mb-2">Flashcards de Genética</h1>
+            <p className="text-slate-300">Treine sua memória com repetição espaçada</p>
           </div>
           
-          <h1 className="text-3xl font-black text-center text-slate-800 mb-2">Flashcards de Genética</h1>
-          <p className="text-center text-slate-500 mb-8">Memorização ativa e repetição espaçada.</p>
-
-          <div className="space-y-6">
+          <div className="p-8 space-y-6">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                <User className="w-4 h-4 text-indigo-500" /> Seu Nome
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Como gostaria de ser chamado?
               </label>
-              <input 
-                type="text" 
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Digite seu nome para o ranking"
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                maxLength={20}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-indigo-500" /> Modo de Jogo
-              </label>
-              <div className="grid grid-cols-1 gap-2">
-                 {/* Reordered: 1º Seminário (Concepts) -> 2º Seminário (Classification) -> Síndromes */}
-                <button
-                  onClick={() => setGameMode('concepts')}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
-                    gameMode === 'concepts' 
-                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' 
-                      : 'border-slate-100 text-slate-600 hover:border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <Rocket className="w-5 h-5 flex-shrink-0" />
-                  <div className="text-left">
-                    <span className="block font-bold">1º Seminário</span>
-                    <span className="text-xs opacity-75">Aplicações e Conceitos (PCR, Forense...)</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setGameMode('classification')}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
-                    gameMode === 'classification' 
-                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' 
-                      : 'border-slate-100 text-slate-600 hover:border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <Activity className="w-5 h-5 flex-shrink-0" />
-                  <div className="text-left">
-                    <span className="block font-bold">2º Seminário</span>
-                    <span className="text-xs opacity-75">Classificação das Doenças</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setGameMode('identification')}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
-                    gameMode === 'identification' 
-                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' 
-                      : 'border-slate-100 text-slate-600 hover:border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <Stethoscope className="w-5 h-5 flex-shrink-0" />
-                  <div className="text-left">
-                    <span className="block font-bold">Síndromes</span>
-                    <span className="text-xs opacity-75">Associe características às síndromes.</span>
-                  </div>
-                </button>
+              <div className="relative">
+                <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                <input 
+                  type="text" 
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  maxLength={20}
+                  placeholder="Seu Nome"
+                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                />
               </div>
+              <p className="text-xs text-slate-500 mt-2">
+                * Necessário para o Ranking Global.
+              </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-3">
               <button 
                 onClick={handleStartGame}
                 disabled={!playerName.trim()}
-                className="col-span-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg
+                  ${playerName.trim() 
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200' 
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
               >
-                <Play className="w-5 h-5" fill="currentColor" /> Jogar
+                <Play className="w-5 h-5 fill-current" />
+                Iniciar Jogo
               </button>
               
               <button 
                 onClick={handleOpenRanking}
-                className="col-span-1 py-4 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2"
+                className="w-full py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center gap-2"
               >
-                <BarChart3 className="w-5 h-5" /> Ranking
+                <Trophy className="w-5 h-5 text-amber-500" />
+                Ver Ranking Global
               </button>
             </div>
           </div>
-          
-          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-             <p className="text-xs text-slate-400">Desenvolvido por Pedro Amorim • 2025</p>
+          <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
+             <div className="flex flex-col items-center justify-center text-slate-400 text-sm gap-1">
+                <div className="flex items-center gap-1">
+                  <span>Feito com</span>
+                  <Heart className="w-4 h-4 text-red-500 fill-current" />
+                  <span>para estudantes de medicina.</span>
+                </div>
+                <div className="font-bold text-slate-600">Desenvolvido por Pedro Amorim</div>
+                <div className="text-xs">© 2025 Flashcards de Genética. Todos os direitos reservados.</div>
+             </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // --- RANKING SCREEN RENDER ---
+  // 2. RANKING VIEW
   if (currentView === 'ranking') {
-    // Generate combined leaderboard with "Current Game" if active
-    let displayLeaderboard = [...leaderboard];
-    const isPlaying = !hasWon && elapsedTime > 0 && !isCountingDown;
-
-    if (isPlaying) {
-      displayLeaderboard.push({
-        name: playerName,
-        time: elapsedTime,
-        difficulty: difficulty,
-        mode: gameMode,
-        date: new Date().toLocaleDateString('pt-BR'),
-        isCurrent: true
-      });
+    // Determine which list to show based on selected tab (reusing gameMode state for tab selection)
+    const currentTabScores = leaderboard.filter(s => s.mode === gameMode);
+    
+    // Create a combined list with current player status if game is in progress
+    let displayList = [...currentTabScores];
+    
+    // Only inject "In Progress" entry if we are paused in a game (timer running or not won yet) AND view switched
+    if (elapsedTime > 0 && !hasWon && playerName) {
+        const tempEntry: ScoreEntry = {
+            name: playerName,
+            time: elapsedTime,
+            difficulty: difficulty,
+            mode: gameMode,
+            date: new Date().toISOString(),
+            isCurrent: true
+        };
+        displayList.push(tempEntry);
+        displayList.sort((a, b) => a.time - b.time);
     }
-
-    // Sort by time
-    displayLeaderboard.sort((a, b) => a.time - b.time);
+    
+    // Limit to top 50 for display
+    displayList = displayList.slice(0, 50);
 
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center py-6 md:py-10 px-4 font-sans">
-        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl border border-indigo-100 p-4 md:p-8">
-          <div className="flex items-center gap-3 mb-6 border-b pb-4">
-             <div className="bg-amber-100 p-3 rounded-full">
-                <Trophy className="w-6 h-6 md:w-8 md:h-8 text-amber-600" />
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4">
+        <div className="max-w-2xl w-full bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+          {/* Header */}
+          <div className="bg-slate-800 p-6 flex items-center justify-between shrink-0">
+             <div className="flex items-center gap-3">
+               <Trophy className="w-8 h-8 text-amber-400" />
+               <h1 className="text-2xl font-bold text-white">Ranking Global</h1>
              </div>
-             <h1 className="text-xl md:text-2xl font-bold text-slate-800">Ranking Global</h1>
+             <button 
+               onClick={hasWon || elapsedTime === 0 ? handleBackToMenu : handleBackToGame}
+               className="p-2 bg-slate-700 rounded-lg text-white hover:bg-slate-600 transition-colors"
+             >
+               <Home className="w-5 h-5" />
+             </button>
           </div>
 
-          {/* Mode Selector Tabs for Ranking */}
-          <div className="flex overflow-x-auto pb-2 mb-4 gap-2 no-scrollbar md:flex-wrap md:justify-center">
-            <button
-              onClick={() => setGameMode('concepts')}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'concepts' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >
-              1º Seminário
-            </button>
-            <button
-              onClick={() => setGameMode('classification')}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'classification' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >
-              2º Seminário
-            </button>
-            <button
-              onClick={() => setGameMode('identification')}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap transition-colors ${gameMode === 'identification' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >
-              Síndromes
-            </button>
+          {/* Tabs */}
+          <div className="flex border-b border-slate-200 overflow-x-auto shrink-0">
+             <button 
+                onClick={() => setGameMode('concepts')}
+                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${gameMode === 'concepts' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                1º Seminário
+             </button>
+             <button 
+                onClick={() => setGameMode('classification')}
+                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${gameMode === 'classification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                2º Seminário
+             </button>
+             <button 
+                onClick={() => setGameMode('identification')}
+                className={`flex-1 py-3 px-4 font-medium text-sm whitespace-nowrap transition-colors ${gameMode === 'identification' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                Síndromes
+             </button>
           </div>
 
           {/* Table */}
-          {isLoadingScores && !isPlaying ? (
-             <div className="text-center py-12 text-slate-400">Carregando scores...</div>
-           ) : (
-             <div className="rounded-xl border border-slate-200 mb-8 w-full overflow-x-auto">
-               <table className="w-full text-xs md:text-sm text-left">
-                 <thead className="bg-slate-100 text-slate-600 font-semibold whitespace-nowrap">
+          <div className="overflow-y-auto overflow-x-auto p-0 flex-1">
+             {isLoadingScores ? (
+               <div className="flex flex-col items-center justify-center h-40 gap-3">
+                 <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+                 <p className="text-slate-500">Carregando recordes...</p>
+               </div>
+             ) : displayList.length === 0 ? (
+               <div className="text-center p-10 text-slate-500">
+                 Nenhum recorde registrado para este modo ainda. Seja o primeiro!
+               </div>
+             ) : (
+               <table className="w-full text-left border-collapse">
+                 <thead className="bg-slate-50 sticky top-0 z-10">
                    <tr>
-                     <th className="px-3 py-3 w-10 text-center">#</th>
-                     <th className="px-3 py-3">Nome</th>
-                     <th className="px-3 py-3 text-right">Tempo</th>
-                     <th className="px-3 py-3 text-center hidden sm:table-cell">Nível</th>
+                     <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-12 text-center">#</th>
+                     <th className="py-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Jogador</th>
+                     <th className="py-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Tempo</th>
+                     {/* Hidden columns on mobile */}
+                     <th className="hidden sm:table-cell py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Nível</th>
+                     <th className="hidden md:table-cell py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Data</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100">
-                   {displayLeaderboard.length > 0 ? displayLeaderboard.slice(0, 50).map((score, index) => (
-                     <tr key={score.id || index} className={`hover:bg-slate-50 ${score.isCurrent ? 'bg-red-50 hover:bg-red-100' : ''}`}>
-                       <td className="px-3 py-2 md:py-3 font-medium text-slate-500 text-center">{index + 1}</td>
-                       <td className="px-3 py-2 md:py-3 font-bold text-slate-800">
-                         <div className="flex flex-col sm:flex-row sm:items-center gap-1">
-                           <span className="truncate max-w-[120px] sm:max-w-xs block">{score.name}</span>
-                           {score.isCurrent && <span className="inline-block text-[10px] uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200 w-fit">Não Concluiu</span>}
-                         </div>
-                       </td>
-                       <td className={`px-3 py-2 md:py-3 text-right font-mono whitespace-nowrap ${score.isCurrent ? 'text-red-600 font-bold' : 'text-indigo-600'}`}>
-                         {formatTime(score.time)}
-                       </td>
-                       <td className="px-3 py-2 md:py-3 text-center hidden sm:table-cell">
-                         <span className="bg-slate-200 text-slate-600 text-[10px] md:text-xs px-2 py-1 rounded-full font-bold">{score.difficulty}</span>
-                       </td>
-                     </tr>
-                   )) : (
-                     <tr>
-                       <td colSpan={4} className="px-4 py-8 text-center text-slate-400">Nenhum recorde encontrado para este modo.</td>
-                     </tr>
-                   )}
+                   {displayList.map((entry, index) => {
+                     const isTop3 = index < 3;
+                     const rankColor = index === 0 ? 'text-amber-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-amber-700' : 'text-slate-600';
+                     
+                     return (
+                       <tr key={index} className={`hover:bg-slate-50 transition-colors ${entry.isCurrent ? 'bg-red-50' : ''}`}>
+                         <td className="py-3 px-4 text-center">
+                           {isTop3 ? (
+                             <Award className={`w-5 h-5 mx-auto ${rankColor}`} />
+                           ) : (
+                             <span className="text-slate-500 text-xs font-medium">{index + 1}º</span>
+                           )}
+                         </td>
+                         <td className="py-3 px-2">
+                           <div className="flex flex-col">
+                             <span className={`font-medium text-sm truncate max-w-[120px] sm:max-w-[200px] ${entry.isCurrent ? 'text-red-600' : 'text-slate-800'}`}>
+                               {entry.name} {entry.isCurrent && "(Não concluiu)"}
+                             </span>
+                           </div>
+                         </td>
+                         <td className="py-3 px-2 text-right">
+                           <span className={`font-mono text-sm ${entry.isCurrent ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
+                              {formatTime(entry.time)}
+                           </span>
+                         </td>
+                         <td className="hidden sm:table-cell py-3 px-4 text-center">
+                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800">
+                             Lvl {entry.difficulty}
+                           </span>
+                         </td>
+                         <td className="hidden md:table-cell py-3 px-4 text-right text-xs text-slate-400">
+                           {new Date(entry.date).toLocaleDateString()}
+                         </td>
+                       </tr>
+                     );
+                   })}
                  </tbody>
                </table>
-             </div>
-           )}
-
-           <button 
-              onClick={hasWon || isPlaying ? handleBackToGame : handleBackToMenu}
-              className="w-full py-3 border-2 border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-            >
-              {isPlaying ? (
-                <>
-                  <Play className="w-5 h-5" /> Voltar ao Jogo (Continuar)
-                </>
-              ) : (
-                 <>
-                  <Home className="w-5 h-5" /> Voltar ao Menu
-                 </>
-              )}
-            </button>
+             )}
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- GAME RENDER ---
+  // 3. GAME VIEW (Default)
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      
-      {/* --- COUNTDOWN OVERLAY --- */}
+      {/* 3, 2, 1 Countdown Overlay */}
       {isCountingDown && (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="text-9xl font-black text-white animate-count drop-shadow-2xl">
-            {countdownValue}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
+          <div className="text-9xl font-black text-white animate-count">
+            {countdownValue === 0 ? 'JÁ!' : countdownValue}
           </div>
         </div>
       )}
 
-      {/* --- HEADER (COMPACT) --- */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm py-2">
-        <div className="max-w-4xl mx-auto px-4">
-          {/* Row 1: Logo, Title, Timer, Controls */}
-          <div className="flex justify-between items-center gap-2">
-            
-            {/* Left: Icon & Name */}
+      {/* Header Compacto Mobile */}
+      <header className="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-20">
+        <div className="max-w-4xl mx-auto px-4 py-2">
+          {/* Linha Superior: Logo, Timer e Controles */}
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="bg-indigo-600 p-2 rounded-lg shadow-md shadow-indigo-100">
-                <Dna className="w-5 h-5 text-white" />
+              <div className="bg-emerald-100 p-1.5 rounded-lg">
+                <Dna className="w-5 h-5 text-emerald-600" />
               </div>
-              <div className="flex flex-col">
-                 {/* Hidden on small mobile */}
-                <h1 className="hidden md:block text-lg font-bold text-slate-800 tracking-tight leading-none">Flashcards de Genética</h1>
-                <p className="text-xs text-slate-500 font-medium truncate max-w-[120px] md:max-w-none">{playerName}</p>
+              <div>
+                 <h1 className="text-sm font-bold text-slate-800 hidden md:block">Flashcards de Genética</h1>
+                 <p className="text-xs text-slate-500 flex items-center gap-1">
+                   <User className="w-3 h-3" /> {playerName}
+                 </p>
               </div>
             </div>
+            
+            <div className="flex items-center gap-2">
+               <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-full">
+                  <Timer className={`w-4 h-4 ${isTimerRunning ? 'text-emerald-500 animate-pulse' : 'text-slate-400'}`} />
+                  <span className="font-mono font-bold text-slate-700 text-sm">{formatTime(elapsedTime)}</span>
+               </div>
+               <button 
+                 onClick={handleOpenRanking}
+                 className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                 title="Ver Ranking"
+               >
+                 <BarChart3 className="w-5 h-5" />
+               </button>
+               <button 
+                 onClick={() => {
+                   if (window.confirm("Deseja sair do jogo atual?")) {
+                     handleBackToMenu();
+                   }
+                 }}
+                 className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                 title="Sair"
+               >
+                 <Home className="w-5 h-5" />
+               </button>
+            </div>
+          </div>
 
-             {/* Difficulty Selector (Moved inline/compact) */}
-            <div className="flex gap-1">
-              {availableLevels.map(level => (
-                <button
-                  key={level}
-                  onClick={() => setDifficulty(level)}
-                  className={`w-8 h-8 md:w-8 md:h-8 rounded-md font-bold text-xs transition-all border ${
-                    difficulty === level
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                      : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+          {/* Linha Inferior: Modos e Dificuldade (Scrollavel se necessario, mas ajustado com wrap) */}
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-between">
+            
+            {/* Seletor de Modo */}
+            <div className="flex bg-slate-100 p-1 rounded-lg overflow-hidden shrink-0">
+               <button
+                  onClick={() => { setGameMode('concepts'); startCountdown(); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                    gameMode === 'concepts' 
+                      ? 'bg-white text-emerald-700 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  {level}
+                  <Rocket className="w-3 h-3" />
+                  <span className="hidden sm:inline">1º Sem.</span>
+                  <span className="sm:hidden">1º</span>
                 </button>
-              ))}
+                <button
+                  onClick={() => { setGameMode('classification'); startCountdown(); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                    gameMode === 'classification' 
+                      ? 'bg-white text-emerald-700 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Activity className="w-3 h-3" />
+                  <span className="hidden sm:inline">2º Sem.</span>
+                  <span className="sm:hidden">2º</span>
+                </button>
+                <button
+                  onClick={() => { setGameMode('identification'); startCountdown(); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                    gameMode === 'identification' 
+                      ? 'bg-white text-emerald-700 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Stethoscope className="w-3 h-3" />
+                  <span className="hidden sm:inline">Síndromes</span>
+                  <span className="sm:hidden">Sind</span>
+                </button>
             </div>
 
-            {/* Right: Timer & Actions */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-1.5 rounded-full border border-slate-200">
-                <Timer className="w-3.5 h-3.5 text-slate-500" />
-                <span className={`font-mono text-sm font-bold ${isTimerRunning ? 'text-indigo-600' : 'text-slate-600'}`}>
-                  {formatTime(elapsedTime)}
-                </span>
-              </div>
-              
-              <button 
-                onClick={handleOpenRanking}
-                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors border border-transparent hover:border-indigo-100"
-                title="Ver Ranking"
-              >
-                <BarChart3 className="w-4 h-4" />
-              </button>
+            {/* Níveis */}
+            <div className="flex items-center gap-1">
+                {[1, 2, 3, 4].map((level) => {
+                    // Hide level 4 for 'identification' or 'concepts' as requested
+                    if (level === 4 && (gameMode === 'identification' || gameMode === 'concepts')) return null;
 
-              <button 
-                onClick={startCountdown}
-                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors border border-transparent hover:border-indigo-100"
-                title="Reiniciar Jogo"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={handleBackToMenu}
-                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors border border-transparent hover:border-red-100"
-                title="Sair / Menu Principal"
-              >
-                <Home className="w-4 h-4" />
-              </button>
+                    return (
+                      <button
+                        key={level}
+                        onClick={() => { 
+                            setDifficulty(level); 
+                            // Restart game immediately on difficulty change to apply settings
+                            setTimeout(() => startCountdown(), 10);
+                        }}
+                        className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold transition-all border-2
+                          ${difficulty === level 
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
+                            : 'border-slate-200 text-slate-400 hover:border-emerald-200'}`}
+                      >
+                        {level}
+                      </button>
+                    );
+                })}
             </div>
           </div>
+        </div>
 
-          {/* Row 2: Mode Indicators (Very compact) */}
-          <div className="flex justify-center gap-1 mt-1">
-               <div
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap transition-all border ${
-                  gameMode === 'concepts' 
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
-                    : 'text-slate-400 border-transparent'
-                }`}
-              >
-                <Rocket className="w-3 h-3" /> 1º Seminário
-              </div>
-              <div
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap transition-all border ${
-                  gameMode === 'classification' 
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
-                    : 'text-slate-400 border-transparent'
-                }`}
-              >
-                <Activity className="w-3 h-3" /> 2º Seminário
-              </div>
-              <div
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap transition-all border ${
-                  gameMode === 'identification' 
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
-                    : 'text-slate-400 border-transparent'
-                }`}
-              >
-                <Stethoscope className="w-3 h-3" /> Síndromes
-              </div>
-          </div>
+        {/* Progress Bar */}
+        <div className="h-1 bg-slate-100 w-full">
+           <div 
+             className="h-full bg-emerald-500 transition-all duration-500 ease-out"
+             style={{ width: `${getCurrentProgress()}%` }}
+           />
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl mx-auto px-4 py-6 w-full flex flex-col gap-4">
+      {/* Main Game Area */}
+      <main className="flex-1 max-w-2xl mx-auto w-full p-4 flex flex-col justify-center">
         
-        {/* --- WIN SCREEN --- */}
+        {/* WIN SCREEN */}
         {hasWon ? (
-          <div className="bg-white rounded-3xl shadow-xl border border-indigo-100 p-8 text-center animate-in zoom-in duration-300">
-            <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Trophy className="w-12 h-12 text-green-600" />
-            </div>
-            <h2 className="text-3xl font-bold text-slate-800 mb-2">Parabéns, {playerName}!</h2>
-            <p className="text-slate-600 mb-6">
-              Você completou o modo <span className="font-semibold text-indigo-600">
-                {gameMode === 'concepts' ? '1º Seminário' : 
-                 gameMode === 'classification' ? '2º Seminário' : 'Síndromes'}
-              </span>!
-            </p>
-            
-            <div className="inline-block bg-slate-50 border border-slate-200 rounded-xl px-6 py-4 mb-8">
-              <p className="text-sm text-slate-500 uppercase tracking-wide font-bold mb-1">Tempo Final</p>
-              <p className="text-4xl font-black text-indigo-600">{formatTime(elapsedTime)}</p>
-            </div>
+           <div className="bg-white rounded-3xl shadow-xl p-8 text-center animate-in zoom-in duration-300 border-2 border-emerald-100">
+             <div className="bg-emerald-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+               <Trophy className="w-10 h-10 text-emerald-600" />
+             </div>
+             <h2 className="text-3xl font-black text-slate-800 mb-2">Parabéns, {playerName}!</h2>
+             <p className="text-slate-600 mb-6">
+               Você dominou o módulo 
+               <span className="font-bold text-emerald-600">
+                 {gameMode === 'classification' ? ' 2º Seminário' : (gameMode === 'concepts' ? ' 1º Seminário' : ' Síndromes')}
+               </span>!
+             </p>
+             
+             <div className="bg-slate-50 rounded-xl p-6 mb-8 border border-slate-100">
+               <div className="text-sm text-slate-500 uppercase tracking-wide font-semibold mb-1">Tempo Total</div>
+               <div className="text-4xl font-mono font-bold text-slate-800">{formatTime(elapsedTime)}</div>
+             </div>
 
-            {!scoreSaved ? (
-              <div className="max-w-xs mx-auto mb-8">
-                <button 
-                  onClick={handleSaveScore}
-                  disabled={isSaving}
-                  className="w-full bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" /> Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <Award className="w-5 h-5" /> Registrar no Ranking
-                    </>
-                  )}
-                </button>
-                <p className="text-xs text-slate-400 mt-2">Seu nome já foi preenchido.</p>
-              </div>
-            ) : (
-              <div className="mb-8 text-green-600 font-bold flex items-center justify-center gap-2 bg-green-50 py-2 rounded-lg">
-                <CheckCircle className="w-5 h-5" /> Pontuação Salva!
-              </div>
-            )}
+             {/* Feedback de erro ao salvar */}
+             {saveError && (
+               <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center justify-center gap-2">
+                 <AlertCircle className="w-4 h-4" />
+                 {saveError}
+               </div>
+             )}
 
-            <div className="flex flex-col gap-3 max-w-md mx-auto">
-              <button 
-                onClick={startCountdown}
-                className="w-full px-8 py-3 bg-white border-2 border-indigo-600 text-indigo-700 hover:bg-indigo-50 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2"
-              >
-                <RefreshCw className="w-5 h-5" /> Jogar Novamente
-              </button>
-
-              <button 
-                onClick={handleBackToMenu}
-                className="w-full px-8 py-3 border-2 border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2"
-              >
-                <Home className="w-5 h-5" /> Voltar ao Menu
-              </button>
-            </div>
-            
-            {/* Mini Ranking Preview */}
-            <div className="mt-12 opacity-80">
-                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">Top 5 Recentes</h3>
-                 {isLoadingScores ? (
-                 <div className="text-xs text-slate-400">Carregando...</div>
+             <div className="space-y-3">
+               {!scoreSaved ? (
+                 <button 
+                   onClick={saveScore}
+                   disabled={isSaving}
+                   className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-200 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+                 >
+                   {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Award className="w-5 h-5" />}
+                   {isSaving ? "Salvando..." : "Registrar no Ranking"}
+                 </button>
                ) : (
-                 <div className="overflow-hidden rounded-xl border border-slate-100 max-w-lg mx-auto">
-                   <table className="w-full text-sm text-left">
-                     <tbody className="divide-y divide-slate-100">
-                       {leaderboard.slice(0, 5).map((score, index) => (
-                         <tr key={score.id || index} className={`bg-slate-50 ${score.name === playerName && score.time === elapsedTime ? 'bg-indigo-50' : ''}`}>
-                           <td className="px-4 py-2 font-medium text-slate-500">{index + 1}</td>
-                           <td className="px-4 py-2 font-bold text-slate-800">{score.name}</td>
-                           <td className="px-4 py-2 text-right font-mono text-indigo-600">{formatTime(score.time)}</td>
-                         </tr>
-                       ))}
-                     </tbody>
-                   </table>
+                 <div className="w-full py-4 bg-green-50 text-green-700 rounded-xl font-bold border border-green-200 flex items-center justify-center gap-2">
+                   <CheckCircle className="w-5 h-5" />
+                   Pontuação Salva!
                  </div>
                )}
+
+               <div className="flex gap-3">
+                  <button 
+                    onClick={startCountdown}
+                    className="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                    Jogar Novamente
+                  </button>
+                  <button 
+                    onClick={handleBackToMenu}
+                    className="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Home className="w-5 h-5" />
+                    Menu
+                  </button>
+               </div>
+             </div>
+           </div>
+        ) : (
+          /* GAME CARD */
+          <div className="w-full">
+            {/* CARD DISPLAY */}
+            <div className="bg-white rounded-3xl shadow-xl overflow-hidden min-h-[250px] flex flex-col items-center justify-center p-6 text-center border border-slate-100 relative mb-6">
+               {/* Streak Dots */}
+               <div className="absolute top-4 right-4 flex gap-1">
+                 {[...Array(REQUIRED_STREAK)].map((_, i) => (
+                   <div 
+                     key={i}
+                     className={`w-2 h-2 rounded-full transition-colors duration-300 
+                       ${i < (
+                         gameMode === 'classification' 
+                           ? (classCards.find(c => c.diseaseId === currentClassId)?.streak || 0)
+                           : (gameMode === 'concepts'
+                               ? (conceptCards.find(c => c.diseaseId === currentConceptId)?.streak || 0)
+                               : (syndromeCards.find(c => c.diseaseId === currentSyndromeId)?.streak || 0)
+                             )
+                         ) 
+                         ? 'bg-emerald-400' 
+                         : 'bg-slate-200'}`}
+                   />
+                 ))}
+               </div>
+
+               {gameMode === 'classification' && currentClassId && (
+                  <>
+                     <div className="text-xs font-bold tracking-wider text-slate-400 uppercase mb-4">Doença</div>
+                     <h2 className="text-2xl md:text-4xl font-black text-slate-800 leading-tight">
+                       {diseases.find(d => d.id === currentClassId)?.name}
+                     </h2>
+                  </>
+               )}
+
+               {(gameMode === 'identification' || gameMode === 'concepts') && (
+                  <div className="w-full text-left">
+                     {gameMode === 'identification' && currentSyndromeId && (
+                        <>
+                           <div className="text-xs font-bold tracking-wider text-slate-400 uppercase mb-4 text-center">Identifique a Síndrome</div>
+                           <ul className="space-y-3">
+                              {syndromes.find(s => s.id === currentSyndromeId)?.features.map((feature, idx) => {
+                                 const parts = feature.split(':');
+                                 const label = parts[0];
+                                 const content = parts.slice(1).join(':');
+                                 return (
+                                    <li key={idx} className="text-sm md:text-base text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                       <span className="font-bold text-slate-900">{label}:</span>{content}
+                                    </li>
+                                 )
+                              })}
+                           </ul>
+                        </>
+                     )}
+                     {gameMode === 'concepts' && currentConceptId && (
+                         <>
+                             <div className="text-xs font-bold tracking-wider text-slate-400 uppercase mb-4 text-center">Identifique o Conceito</div>
+                             <ul className="space-y-3">
+                                 {concepts.find(c => c.id === currentConceptId)?.description.map((desc, idx) => (
+                                     <li key={idx} className="text-sm md:text-base text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100 flex gap-2">
+                                         <div className="min-w-[6px] h-[6px] rounded-full bg-emerald-400 mt-2 shrink-0" />
+                                         <span>{desc}</span>
+                                     </li>
+                                 ))}
+                             </ul>
+                         </>
+                     )}
+                  </div>
+               )}
+            </div>
+
+            {/* FEEDBACK OVERLAY */}
+            {feedback.status && (
+               <div className={`mb-6 p-4 rounded-2xl flex items-center justify-center gap-3 animate-in fade-in slide-in-from-bottom-2
+                 ${feedback.status === 'correct' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                 {feedback.status === 'correct' ? <CheckCircle className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+                 <div className="text-center">
+                   <p className="font-bold text-lg">{feedback.message}</p>
+                   {feedback.correctAnswer && (
+                     <p className="text-sm opacity-90 mt-1">Resposta: {feedback.correctAnswer}</p>
+                   )}
+                 </div>
+               </div>
+            )}
+
+            {/* ANSWER BUTTONS */}
+            <div className={`grid gap-3 ${gameMode === 'classification' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+              
+              {/* MODE 1: CLASSIFICATION OPTIONS */}
+              {gameMode === 'classification' && classificationOptions.map((option) => (
+                <button
+                  key={option}
+                  onClick={() => handleClassificationAnswer(option)}
+                  disabled={!!feedback.status}
+                  className={`p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform active:scale-[0.98] shadow-sm
+                    ${feedback.status 
+                      ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400' 
+                      : (difficulty === 3 || difficulty === 4) // Grayscale check
+                        ? 'bg-white border-slate-200 text-slate-700 hover:border-slate-400 hover:bg-slate-50'
+                        : getClassificationColor(option)
+                    }`}
+                >
+                  {option}
+                </button>
+              ))}
+
+              {/* MODE 2: SYNDROME OPTIONS */}
+              {gameMode === 'identification' && syndromeOptions.map((option, idx) => (
+                <button
+                  key={option.id}
+                  onClick={() => handleSyndromeAnswer(option.id)}
+                  disabled={!!feedback.status}
+                  className={`p-4 rounded-xl border-2 font-bold text-left md:text-center text-sm md:text-lg transition-all transform active:scale-[0.98] shadow-sm flex items-center gap-3 md:justify-center
+                    ${feedback.status 
+                       ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400' 
+                       : getOptionColor(idx) // Always colored for syndromes as requested
+                    }`}
+                >
+                   {/* Option Letter (A, B, C, D) for easier mobile tapping */}
+                   <span className="w-8 h-8 rounded-full bg-white/50 flex items-center justify-center text-xs font-black uppercase shrink-0">
+                      {String.fromCharCode(65 + idx)}
+                   </span>
+                   {option.name}
+                </button>
+              ))}
+
+               {/* MODE 3: CONCEPT OPTIONS */}
+               {gameMode === 'concepts' && conceptOptions.map((option, idx) => (
+                   <button
+                       key={option.id}
+                       onClick={() => handleConceptAnswer(option.id)}
+                       disabled={!!feedback.status}
+                       className={`p-4 rounded-xl border-2 font-bold text-left md:text-center text-sm md:text-lg transition-all transform active:scale-[0.98] shadow-sm flex items-center gap-3 md:justify-center
+                    ${feedback.status
+                           ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
+                           : getOptionColor(idx)
+                       }`}
+                   >
+                       <span className="w-8 h-8 rounded-full bg-white/50 flex items-center justify-center text-xs font-black uppercase shrink-0">
+                           {String.fromCharCode(65 + idx)}
+                       </span>
+                       {option.name}
+                   </button>
+               ))}
             </div>
           </div>
-        ) : (
-          /* --- GAMEPLAY AREA --- */
-          <>
-            <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
-              {/* Progress Bar */}
-              <div className="mb-4">
-                 <div className="flex justify-between text-[10px] md:text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">
-                    <span>Progresso</span>
-                    <span>
-                      {gameMode === 'classification' 
-                        ? `${classCards.filter(c => c.isMastered).length} / ${classCards.length}` 
-                        : gameMode === 'identification' 
-                        ? `${syndromeCards.filter(c => c.isMastered).length} / ${syndromeCards.length}`
-                        : `${conceptCards.filter(c => c.isMastered).length} / ${conceptCards.length}`}
-                    </span>
-                 </div>
-                 <div className="h-2 md:h-3 bg-slate-200 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500 ease-out"
-                      style={{ 
-                        width: `${((gameMode === 'classification' 
-                          ? classCards.filter(c => c.isMastered).length 
-                          : gameMode === 'identification' 
-                          ? syndromeCards.filter(c => c.isMastered).length
-                          : conceptCards.filter(c => c.isMastered).length) / (gameMode === 'classification' ? classCards.length : gameMode === 'identification' ? syndromeCards.length : conceptCards.length)) * 100}%` 
-                      }}
-                    />
-                 </div>
-              </div>
-
-              {/* Card */}
-              <div className={`relative bg-white rounded-3xl shadow-xl border-2 p-6 md:p-10 mb-6 text-center transition-all duration-300 ${
-                  feedback.status === 'correct' ? 'border-green-400 bg-green-50' : 
-                  feedback.status === 'incorrect' ? 'border-red-400 bg-red-50' : 'border-slate-100'
-                }`}>
-                
-                {/* Feedback Icon Overlay */}
-                {feedback.status && (
-                  <div className="absolute top-4 right-4 animate-in zoom-in duration-300">
-                    {feedback.status === 'correct' ? (
-                      <CheckCircle className="w-8 h-8 text-green-500" />
-                    ) : (
-                      <AlertCircle className="w-8 h-8 text-red-500" />
-                    )}
-                  </div>
-                )}
-
-                {gameMode === 'classification' ? (
-                  <>
-                    <h2 className="text-xl md:text-3xl font-black text-slate-800 mb-2 tracking-tight">
-                      {currentCardClass?.name || 'Carregando...'}
-                    </h2>
-                    <p className="text-slate-400 font-medium text-sm md:text-base">Classifique a doença acima</p>
-                  </>
-                ) : gameMode === 'identification' ? (
-                  <div className="text-left space-y-3 md:space-y-4">
-                    <h2 className="text-lg md:text-2xl font-black text-slate-800 mb-3 tracking-tight text-center border-b pb-3">
-                      Identifique a Síndrome
-                    </h2>
-                    {currentCardSyndrome?.features.map((feature, idx) => (
-                      <div key={idx} className="flex gap-3 text-slate-700 text-sm md:text-base">
-                        <div className="min-w-1.5 h-1.5 rounded-full bg-indigo-400 mt-2" />
-                        <p className="leading-relaxed">{feature}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-left space-y-3 md:space-y-4">
-                    <h2 className="text-lg md:text-2xl font-black text-slate-800 mb-3 tracking-tight text-center border-b pb-3">
-                      Conceito / Aplicação
-                    </h2>
-                    {currentCardConcept?.description.map((desc, idx) => (
-                      <div key={idx} className="flex gap-3 text-slate-700 text-sm md:text-base">
-                        <div className="min-w-1.5 h-1.5 rounded-full bg-purple-400 mt-2" />
-                        <p className="leading-relaxed">{desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Feedback Message */}
-              {feedback.status === 'incorrect' && (
-                <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-xl text-center font-medium animate-in fade-in slide-in-from-top-4 text-sm md:text-base">
-                  Resposta correta: <span className="font-bold">{feedback.correctAnswer}</span>
-                </div>
-              )}
-
-              {/* Options Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {gameMode === 'classification' ? (
-                  classButtons.map((btn) => (
-                    <button
-                      key={btn.value}
-                      onClick={() => handleClassAnswer(btn.value as Classification)}
-                      disabled={feedback.status !== null || isCountingDown}
-                      className={`p-3 md:p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
-                        ${isGrayscale 
-                          ? 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' 
-                          : getClassificationColor(btn.value as Classification)
-                        }`}
-                    >
-                      {btn.label}
-                    </button>
-                  ))
-                ) : gameMode === 'identification' ? (
-                  syndromeOptions.map((option, idx) => (
-                    <button
-                      key={option.id}
-                      onClick={() => handleSyndromeAnswer(option.name)}
-                      disabled={feedback.status !== null || isCountingDown}
-                      className={`p-3 md:p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
-                        ${getOptionColor(idx)}`}
-                    >
-                      {option.name}
-                    </button>
-                  ))
-                ) : (
-                  conceptOptions.map((option, idx) => (
-                    <button
-                      key={option.id}
-                      onClick={() => handleConceptAnswer(option.name)}
-                      disabled={feedback.status !== null || isCountingDown}
-                      className={`p-3 md:p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
-                        ${getOptionColor(idx)}`}
-                    >
-                      {option.name}
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          </>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="py-4 text-center text-slate-400 text-xs border-t border-slate-100 bg-white mt-auto">
-        <div className="flex flex-col items-center gap-1">
-          <p className="flex items-center gap-1">
-            Feito com <Heart className="w-3 h-3 text-red-500 fill-red-500" /> para estudantes de medicina.
-          </p>
-          <p className="font-semibold text-slate-600">
-            Desenvolvido por Pedro Amorim
-          </p>
-          <p className="text-[10px]">
-            © 2025 Flashcards de Genética. Todos os direitos reservados.
-          </p>
-        </div>
-      </footer>
     </div>
   );
 };

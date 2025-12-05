@@ -32,6 +32,7 @@ interface ScoreEntry {
   date: string;
   difficulty: number;
   mode: string; // 'classification' | 'identification' | 'concepts'
+  isCurrent?: boolean; // Flag para identificar jogo em andamento
 }
 
 // Helper to get color for visual feedback (Game Mode 1)
@@ -139,7 +140,7 @@ const App: React.FC = () => {
 
       // Sort by time (ascending) and take top 10
       scores.sort((a, b) => a.time - b.time);
-      setLeaderboard(scores.slice(0, 10));
+      setLeaderboard(scores); // Store all, filter later
 
     } catch (error) {
       console.error("Error fetching leaderboard: ", error);
@@ -165,8 +166,13 @@ const App: React.FC = () => {
   };
 
   const handleOpenRanking = () => {
+    // If opening ranking from game, just switch view, don't reset
     setCurrentView('ranking');
   };
+
+  const handleBackToGame = () => {
+    setCurrentView('game');
+  }
 
   const handleBackToMenu = () => {
     setIsTimerRunning(false);
@@ -596,6 +602,24 @@ const App: React.FC = () => {
 
   // --- RANKING SCREEN RENDER ---
   if (currentView === 'ranking') {
+    // Generate combined leaderboard with "Current Game" if active
+    let displayLeaderboard = [...leaderboard];
+    const isPlaying = !hasWon && elapsedTime > 0 && !isCountingDown;
+
+    if (isPlaying) {
+      displayLeaderboard.push({
+        name: playerName,
+        time: elapsedTime,
+        difficulty: difficulty,
+        mode: gameMode,
+        date: new Date().toLocaleDateString('pt-BR'),
+        isCurrent: true
+      });
+    }
+
+    // Sort by time
+    displayLeaderboard.sort((a, b) => a.time - b.time);
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center py-10 px-4 font-sans">
         <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl border border-indigo-100 p-8">
@@ -606,7 +630,7 @@ const App: React.FC = () => {
              <h1 className="text-2xl font-bold text-slate-800">Ranking Global</h1>
           </div>
 
-          {/* Mode Selector Tabs for Ranking - Reordered and Scroll Removed */}
+          {/* Mode Selector Tabs for Ranking */}
           <div className="flex flex-wrap justify-center gap-2 mb-6 pb-2">
             <button
               onClick={() => setGameMode('concepts')}
@@ -629,7 +653,7 @@ const App: React.FC = () => {
           </div>
 
           {/* Table */}
-          {isLoadingScores ? (
+          {isLoadingScores && !isPlaying ? (
              <div className="text-center py-12 text-slate-400">Carregando scores...</div>
            ) : (
              <div className="overflow-hidden rounded-xl border border-slate-200 mb-8">
@@ -643,11 +667,16 @@ const App: React.FC = () => {
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100">
-                   {leaderboard.length > 0 ? leaderboard.map((score, index) => (
-                     <tr key={score.id || index} className="hover:bg-slate-50">
+                   {displayLeaderboard.length > 0 ? displayLeaderboard.slice(0, 20).map((score, index) => (
+                     <tr key={score.id || index} className={`hover:bg-slate-50 ${score.isCurrent ? 'bg-red-50 hover:bg-red-100' : ''}`}>
                        <td className="px-4 py-3 font-medium text-slate-500">{index + 1}</td>
-                       <td className="px-4 py-3 font-bold text-slate-800">{score.name}</td>
-                       <td className="px-4 py-3 text-right font-mono text-indigo-600">{formatTime(score.time)}</td>
+                       <td className="px-4 py-3 font-bold text-slate-800 flex items-center gap-2">
+                         {score.name} 
+                         {score.isCurrent && <span className="text-[10px] uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">Não Concluiu</span>}
+                       </td>
+                       <td className={`px-4 py-3 text-right font-mono ${score.isCurrent ? 'text-red-600 font-bold' : 'text-indigo-600'}`}>
+                         {formatTime(score.time)}
+                       </td>
                        <td className="px-4 py-3 text-center">
                          <span className="bg-slate-200 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">{score.difficulty}</span>
                        </td>
@@ -663,10 +692,18 @@ const App: React.FC = () => {
            )}
 
            <button 
-              onClick={handleBackToMenu}
+              onClick={hasWon || isPlaying ? handleBackToGame : handleBackToMenu}
               className="w-full py-3 border-2 border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
             >
-              <Home className="w-5 h-5" /> Voltar ao Menu
+              {isPlaying ? (
+                <>
+                  <Play className="w-5 h-5" /> Voltar ao Jogo (Continuar)
+                </>
+              ) : (
+                 <>
+                  <Home className="w-5 h-5" /> Voltar ao Menu
+                 </>
+              )}
             </button>
         </div>
       </div>
@@ -686,85 +723,33 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* --- HEADER --- */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-200">
-                <Dna className="w-8 h-8 text-white" />
+      {/* --- HEADER (COMPACT) --- */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm py-2">
+        <div className="max-w-4xl mx-auto px-4">
+          {/* Row 1: Logo, Title, Timer, Controls */}
+          <div className="flex justify-between items-center gap-2">
+            
+            {/* Left: Icon & Name */}
+            <div className="flex items-center gap-2">
+              <div className="bg-indigo-600 p-2 rounded-lg shadow-md shadow-indigo-100">
+                <Dna className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">Flashcards de Genética</h1>
-                <p className="text-xs text-slate-500 font-medium">Jogador: {playerName}</p>
-              </div>
-            </div>
-
-            {/* Game Mode Indicator - Reordered and Scroll Removed */}
-            <div className="bg-slate-100 p-1 rounded-lg flex flex-wrap justify-center gap-1 max-w-full">
-               <div
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs md:text-sm font-semibold whitespace-nowrap transition-all ${
-                  gameMode === 'concepts' 
-                    ? 'bg-white text-indigo-700 shadow-sm' 
-                    : 'text-slate-400'
-                }`}
-              >
-                <Rocket className="w-4 h-4" /> 1º Seminário
-              </div>
-              <div
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs md:text-sm font-semibold whitespace-nowrap transition-all ${
-                  gameMode === 'classification' 
-                    ? 'bg-white text-indigo-700 shadow-sm' 
-                    : 'text-slate-400'
-                }`}
-              >
-                <Activity className="w-4 h-4" /> 2º Seminário
-              </div>
-              <div
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs md:text-sm font-semibold whitespace-nowrap transition-all ${
-                  gameMode === 'identification' 
-                    ? 'bg-white text-indigo-700 shadow-sm' 
-                    : 'text-slate-400'
-                }`}
-              >
-                <Stethoscope className="w-4 h-4" /> Síndromes
+              <div className="flex flex-col">
+                 {/* Hidden on small mobile */}
+                <h1 className="hidden md:block text-lg font-bold text-slate-800 tracking-tight leading-none">Flashcards de Genética</h1>
+                <p className="text-xs text-slate-500 font-medium truncate max-w-[120px] md:max-w-none">{playerName}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full">
-                <Timer className="w-4 h-4 text-slate-500" />
-                <span className={`font-mono font-bold ${isTimerRunning ? 'text-indigo-600' : 'text-slate-600'}`}>
-                  {formatTime(elapsedTime)}
-                </span>
-              </div>
-              <button 
-                onClick={startCountdown}
-                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
-                title="Reiniciar Jogo"
-              >
-                <RefreshCw className="w-5 h-5" />
-              </button>
-              <button 
-                onClick={handleBackToMenu}
-                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                title="Sair / Menu Principal"
-              >
-                <Home className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Difficulty Selector */}
-          <div className="mt-4 flex flex-col items-center">
-            <div className="flex gap-2">
+             {/* Difficulty Selector (Moved inline/compact) */}
+            <div className="flex gap-1">
               {availableLevels.map(level => (
                 <button
                   key={level}
                   onClick={() => setDifficulty(level)}
-                  className={`w-10 h-10 rounded-lg font-bold text-sm transition-all border-2 ${
+                  className={`w-8 h-8 md:w-8 md:h-8 rounded-md font-bold text-xs transition-all border ${
                     difficulty === level
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5'
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                       : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
                   }`}
                 >
@@ -772,21 +757,75 @@ const App: React.FC = () => {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-400 mt-2 font-medium">
-              {gameMode === 'classification' ? (
-                difficulty === 1 ? "Fixo + Cores" :
-                difficulty === 2 ? "Alternado + Cores" :
-                difficulty === 3 ? "Fixo + Sem Cores" : "Alternado + Sem Cores"
-              ) : (
-                difficulty === 1 ? "Grupos de 3 (Fixo)" :
-                difficulty === 2 ? "Grupos de 6 (Fixo)" : "Todos (Aleatório)"
-              )}
-            </p>
+
+            {/* Right: Timer & Actions */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-1.5 rounded-full border border-slate-200">
+                <Timer className="w-3.5 h-3.5 text-slate-500" />
+                <span className={`font-mono text-sm font-bold ${isTimerRunning ? 'text-indigo-600' : 'text-slate-600'}`}>
+                  {formatTime(elapsedTime)}
+                </span>
+              </div>
+              
+              <button 
+                onClick={handleOpenRanking}
+                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors border border-transparent hover:border-indigo-100"
+                title="Ver Ranking"
+              >
+                <BarChart3 className="w-4 h-4" />
+              </button>
+
+              <button 
+                onClick={startCountdown}
+                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors border border-transparent hover:border-indigo-100"
+                title="Reiniciar Jogo"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={handleBackToMenu}
+                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors border border-transparent hover:border-red-100"
+                title="Sair / Menu Principal"
+              >
+                <Home className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Mode Indicators (Very compact) */}
+          <div className="flex justify-center gap-1 mt-1">
+               <div
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap transition-all border ${
+                  gameMode === 'concepts' 
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
+                    : 'text-slate-400 border-transparent'
+                }`}
+              >
+                <Rocket className="w-3 h-3" /> 1º Seminário
+              </div>
+              <div
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap transition-all border ${
+                  gameMode === 'classification' 
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
+                    : 'text-slate-400 border-transparent'
+                }`}
+              >
+                <Activity className="w-3 h-3" /> 2º Seminário
+              </div>
+              <div
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap transition-all border ${
+                  gameMode === 'identification' 
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
+                    : 'text-slate-400 border-transparent'
+                }`}
+              >
+                <Stethoscope className="w-3 h-3" /> Síndromes
+              </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl mx-auto px-4 py-8 w-full flex flex-col gap-6">
+      <main className="flex-1 max-w-4xl mx-auto px-4 py-6 w-full flex flex-col gap-4">
         
         {/* --- WIN SCREEN --- */}
         {hasWon ? (
@@ -866,9 +905,9 @@ const App: React.FC = () => {
           <>
             <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
               {/* Progress Bar */}
-              <div className="mb-6">
-                 <div className="flex justify-between text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">
-                    <span>Progresso do Nível</span>
+              <div className="mb-4">
+                 <div className="flex justify-between text-[10px] md:text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">
+                    <span>Progresso</span>
                     <span>
                       {gameMode === 'classification' 
                         ? `${classCards.filter(c => c.isMastered).length} / ${classCards.length}` 
@@ -877,7 +916,7 @@ const App: React.FC = () => {
                         : `${conceptCards.filter(c => c.isMastered).length} / ${conceptCards.length}`}
                     </span>
                  </div>
-                 <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                 <div className="h-2 md:h-3 bg-slate-200 rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500 ease-out"
                       style={{ 
@@ -892,7 +931,7 @@ const App: React.FC = () => {
               </div>
 
               {/* Card */}
-              <div className={`relative bg-white rounded-3xl shadow-xl border-2 p-8 md:p-12 mb-8 text-center transition-all duration-300 ${
+              <div className={`relative bg-white rounded-3xl shadow-xl border-2 p-6 md:p-10 mb-6 text-center transition-all duration-300 ${
                   feedback.status === 'correct' ? 'border-green-400 bg-green-50' : 
                   feedback.status === 'incorrect' ? 'border-red-400 bg-red-50' : 'border-slate-100'
                 }`}>
@@ -910,31 +949,31 @@ const App: React.FC = () => {
 
                 {gameMode === 'classification' ? (
                   <>
-                    <h2 className="text-2xl md:text-4xl font-black text-slate-800 mb-2 tracking-tight">
+                    <h2 className="text-xl md:text-3xl font-black text-slate-800 mb-2 tracking-tight">
                       {currentCardClass?.name || 'Carregando...'}
                     </h2>
-                    <p className="text-slate-400 font-medium">Classifique a doença acima</p>
+                    <p className="text-slate-400 font-medium text-sm md:text-base">Classifique a doença acima</p>
                   </>
                 ) : gameMode === 'identification' ? (
-                  <div className="text-left space-y-4">
-                    <h2 className="text-xl md:text-2xl font-black text-slate-800 mb-4 tracking-tight text-center border-b pb-4">
+                  <div className="text-left space-y-3 md:space-y-4">
+                    <h2 className="text-lg md:text-2xl font-black text-slate-800 mb-3 tracking-tight text-center border-b pb-3">
                       Identifique a Síndrome
                     </h2>
                     {currentCardSyndrome?.features.map((feature, idx) => (
-                      <div key={idx} className="flex gap-3 text-slate-700">
-                        <div className="min-w-1.5 h-1.5 rounded-full bg-indigo-400 mt-2.5" />
+                      <div key={idx} className="flex gap-3 text-slate-700 text-sm md:text-base">
+                        <div className="min-w-1.5 h-1.5 rounded-full bg-indigo-400 mt-2" />
                         <p className="leading-relaxed">{feature}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-left space-y-4">
-                    <h2 className="text-xl md:text-2xl font-black text-slate-800 mb-4 tracking-tight text-center border-b pb-4">
+                  <div className="text-left space-y-3 md:space-y-4">
+                    <h2 className="text-lg md:text-2xl font-black text-slate-800 mb-3 tracking-tight text-center border-b pb-3">
                       Conceito / Aplicação
                     </h2>
                     {currentCardConcept?.description.map((desc, idx) => (
-                      <div key={idx} className="flex gap-3 text-slate-700">
-                        <div className="min-w-1.5 h-1.5 rounded-full bg-purple-400 mt-2.5" />
+                      <div key={idx} className="flex gap-3 text-slate-700 text-sm md:text-base">
+                        <div className="min-w-1.5 h-1.5 rounded-full bg-purple-400 mt-2" />
                         <p className="leading-relaxed">{desc}</p>
                       </div>
                     ))}
@@ -944,20 +983,20 @@ const App: React.FC = () => {
 
               {/* Feedback Message */}
               {feedback.status === 'incorrect' && (
-                <div className="mb-6 p-4 bg-red-100 text-red-800 rounded-xl text-center font-medium animate-in fade-in slide-in-from-top-4">
+                <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-xl text-center font-medium animate-in fade-in slide-in-from-top-4 text-sm md:text-base">
                   Resposta correta: <span className="font-bold">{feedback.correctAnswer}</span>
                 </div>
               )}
 
               {/* Options Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {gameMode === 'classification' ? (
                   classButtons.map((btn) => (
                     <button
                       key={btn.value}
                       onClick={() => handleClassAnswer(btn.value as Classification)}
                       disabled={feedback.status !== null || isCountingDown}
-                      className={`p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
+                      className={`p-3 md:p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
                         ${isGrayscale 
                           ? 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' 
                           : getClassificationColor(btn.value as Classification)
@@ -972,7 +1011,7 @@ const App: React.FC = () => {
                       key={option.id}
                       onClick={() => handleSyndromeAnswer(option.name)}
                       disabled={feedback.status !== null || isCountingDown}
-                      className={`p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
+                      className={`p-3 md:p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
                         ${getOptionColor(idx)}`}
                     >
                       {option.name}
@@ -984,7 +1023,7 @@ const App: React.FC = () => {
                       key={option.id}
                       onClick={() => handleConceptAnswer(option.name)}
                       disabled={feedback.status !== null || isCountingDown}
-                      className={`p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
+                      className={`p-3 md:p-4 rounded-xl border-2 font-bold text-sm md:text-base transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
                         ${getOptionColor(idx)}`}
                     >
                       {option.name}
@@ -998,15 +1037,15 @@ const App: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="py-8 text-center text-slate-400 text-sm border-t border-slate-100 bg-white mt-auto">
-        <div className="flex flex-col items-center gap-2">
-          <p className="flex items-center gap-1.5">
-            Feito com <Heart className="w-4 h-4 text-red-500 fill-red-500" /> para estudantes de medicina.
+      <footer className="py-4 text-center text-slate-400 text-xs border-t border-slate-100 bg-white mt-auto">
+        <div className="flex flex-col items-center gap-1">
+          <p className="flex items-center gap-1">
+            Feito com <Heart className="w-3 h-3 text-red-500 fill-red-500" /> para estudantes de medicina.
           </p>
           <p className="font-semibold text-slate-600">
             Desenvolvido por Pedro Amorim
           </p>
-          <p className="text-xs">
+          <p className="text-[10px]">
             © 2025 Flashcards de Genética. Todos os direitos reservados.
           </p>
         </div>
